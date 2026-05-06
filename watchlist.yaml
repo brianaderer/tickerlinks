@@ -1,0 +1,16 @@
+news_feeds:
+  - name: Google News Finance
+    url: https://news.google.com/rss/search?q=stock+market&hl=en-US&gl=US&ceid=US:en
+    source_type: rss
+  - name: Yahoo Finance RSS
+    url: https://finance.yahoo.com/news/rssindex
+    source_type: rss
+  - name: Investing.com RSS
+    url: https://www.investing.com/rss/news.rss
+    source_type: rss
+  - name: MarketWatch RSS
+    url: https://feeds.marketwatch.com/marketwatch/topstories/
+    source_type: rss
+  - name: CNBC Finance RSS
+    url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664
+    source_type: rss
