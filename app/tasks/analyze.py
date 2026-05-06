@@ -11,4 +11,8 @@ def run_signal_analysis(company_ids: list[int] | None = None):
     logger.info("Starting signal analysis task")
     result = run_analysis(company_ids)
     logger.info("Signal analysis complete: %s", result)
+
+    from app.tasks.report import generate_report
+    generate_report.delay()
+
     return result

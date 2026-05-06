@@ -3,7 +3,7 @@ from flask import jsonify, request
 from app.api import bp
 from app.models import (
     Company, PriceHistory, FeedSource, NewsArticle, Index,
-    Signal, SignalMatch, Prediction,
+    Signal, SignalMatch, Prediction, Report,
 )
 from app.articles.processor import search_articles, get_sentiment_index
 from app.articles.indices import all_indices
@@ -252,3 +252,44 @@ def indices():
     symbol = request.args.get("symbol")
     results = all_indices(symbol=symbol)
     return jsonify(results)
+
+
+@bp.route("/reports")
+def list_reports():
+    limit = request.args.get("limit", 20, type=int)
+    reports = Report.query.order_by(Report.generated_at.desc()).limit(limit).all()
+    return jsonify([
+        {
+            "id": r.id,
+            "report_type": r.report_type,
+            "generated_at": r.generated_at.isoformat(),
+            "summary": r.summary,
+        }
+        for r in reports
+    ])
+
+
+@bp.route("/reports/latest")
+def latest_report():
+    report = Report.query.order_by(Report.generated_at.desc()).first()
+    if not report:
+        return jsonify({"error": "No reports yet"}), 404
+    return jsonify({
+        "id": report.id,
+        "report_type": report.report_type,
+        "generated_at": report.generated_at.isoformat(),
+        "summary": report.summary,
+        "data": report.data,
+    })
+
+
+@bp.route("/reports/<int:report_id>")
+def get_report(report_id):
+    report = Report.query.get_or_404(report_id)
+    return jsonify({
+        "id": report.id,
+        "report_type": report.report_type,
+        "generated_at": report.generated_at.isoformat(),
+        "summary": report.summary,
+        "data": report.data,
+    })

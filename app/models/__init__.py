@@ -9,9 +9,10 @@ from app.models.prediction import Prediction
 from app.models.backtest import Backtest
 from app.models.insider_trade import InsiderTrade
 from app.models.fundamentals import Fundamentals
+from app.models.report import Report
 
 __all__ = [
     "Index", "company_index", "Company", "PriceHistory", "FeedSource",
     "NewsArticle", "Signal", "SignalMatch", "prediction_match",
-    "Prediction", "Backtest", "InsiderTrade", "Fundamentals",
+    "Prediction", "Backtest", "InsiderTrade", "Fundamentals", "Report",
 ]

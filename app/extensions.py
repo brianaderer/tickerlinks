@@ -11,7 +11,7 @@ celery = Celery(__name__)
 def celery_init_app(app):
     celery.conf.broker_url = app.config["CELERY_BROKER_URL"]
     celery.conf.result_backend = app.config["CELERY_RESULT_BACKEND"]
-    celery.conf.include = ["app.tasks.fetch", "app.tasks.analyze", "app.tasks.backtest", "app.tasks.articles"]
+    celery.conf.include = ["app.tasks.fetch", "app.tasks.analyze", "app.tasks.backtest", "app.tasks.articles", "app.tasks.report"]
     celery.conf.beat_schedule = {
         "fetch-market-data": {
             "task": "app.tasks.fetch.fetch_market_data",
