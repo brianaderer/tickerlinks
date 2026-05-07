@@ -19,7 +19,7 @@ class InsiderTrade(db.Model):
     price_per_share = db.Column(db.Float)
     total_value = db.Column(db.Float)
     transaction_date = db.Column(db.Date, nullable=False)
-    filing_url = db.Column(db.Text, unique=True, nullable=False)
+    filing_url = db.Column(db.Text, nullable=False, index=True)
     fetched_at = db.Column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

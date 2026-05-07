@@ -77,10 +77,25 @@ class FundamentalsDetector(SignalDetector):
         now = datetime.now(timezone.utc).date()
         cutoff = now - timedelta(days=self.insider_cluster_window_days)
 
-        recent_buys = [t for t in trades if t.get("transaction_type") in ("P", "Form 4") and t.get("date") and t["date"] >= cutoff]
+        recent_buys = [
+            t for t in trades
+            if t.get("transaction_type") == "Purchase"
+            and t.get("shares", 0) > 0
+            and t.get("date")
+            and t["date"] >= cutoff
+        ]
+        recent_sells = [
+            t for t in trades
+            if t.get("transaction_type") == "Sale"
+            and t.get("shares", 0) > 0
+            and t.get("date")
+            and t["date"] >= cutoff
+        ]
 
+        signals = []
         if len(recent_buys) >= self.insider_cluster_min_count:
-            return [SignalData(
+            total_shares = sum(t.get("shares", 0) for t in recent_buys)
+            signals.append(SignalData(
                 signal_name="Insider Cluster Buy",
                 signal_type="fundamentals",
                 company_id=company_id,
@@ -89,7 +104,27 @@ class FundamentalsDetector(SignalDetector):
                 confidence=min(0.85, 0.6 + len(recent_buys) * 0.05),
                 context={
                     "buy_count": len(recent_buys),
+                    "total_shares": total_shares,
                     "window_days": self.insider_cluster_window_days,
+                    "filers": list({t.get("filer_name", "?") for t in recent_buys})[:5],
                 },
-            )]
-        return []
+            ))
+
+        if len(recent_sells) >= self.insider_cluster_min_count:
+            total_shares = sum(t.get("shares", 0) for t in recent_sells)
+            signals.append(SignalData(
+                signal_name="Insider Cluster Sell",
+                signal_type="fundamentals",
+                company_id=company_id,
+                symbol=symbol,
+                direction="bearish",
+                confidence=min(0.85, 0.6 + len(recent_sells) * 0.05),
+                context={
+                    "sell_count": len(recent_sells),
+                    "total_shares": total_shares,
+                    "window_days": self.insider_cluster_window_days,
+                    "filers": list({t.get("filer_name", "?") for t in recent_sells})[:5],
+                },
+            ))
+
+        return signals

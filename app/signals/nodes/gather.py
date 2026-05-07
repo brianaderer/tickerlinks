@@ -106,8 +106,10 @@ def gather_node(state: EngineState) -> EngineState:
             "insider_trades": [
                 {
                     "filer_name": t.filer_name,
+                    "filer_title": t.filer_title,
                     "transaction_type": t.transaction_type,
                     "shares": t.shares,
+                    "price_per_share": t.price_per_share,
                     "date": t.transaction_date,
                 }
                 for t in insider_trades

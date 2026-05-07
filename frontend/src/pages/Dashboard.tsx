@@ -18,10 +18,6 @@ export default function Dashboard() {
   const { data: trendSnapshot } = useTrends();
   const trends = trendSnapshot?.trends;
 
-  const lead = predictions?.[0];
-  const secondary = predictions?.slice(1, 3);
-  const rest = predictions?.slice(3, 6);
-
   return (
     <div className="space-y-0">
       {/* Masthead section label */}
@@ -31,58 +27,83 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* Above the fold: Lead + Secondary */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 border-t-2 border-stone-900">
-        {/* Lead story */}
-        {!lead && !secondary?.length && (
-          <div className="lg:col-span-12 py-6">
-            <EmptyState message="No predictions yet. The signal engine will generate stories once data flows through the pipeline." />
+      {/* Above the fold: Top Stories (news) */}
+      <div className="border-t-2 border-stone-900 py-6">
+        <span className="text-xs font-sans font-semibold uppercase tracking-wider text-stone-400">Top Stories</span>
+        {(!articles || articles.length === 0) ? (
+          <EmptyState message="No articles yet. Top stories appear once RSS feeds are polled and processed." />
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 mt-4">
+            {/* Lead article */}
+            <div className="lg:col-span-7 pr-0 lg:pr-8 lg:border-r border-stone-300">
+              <Link to="/articles/$articleId" params={{ articleId: String(articles[0].id) }} className="group">
+                <h2 className="font-serif text-3xl font-black leading-tight text-stone-900 group-hover:underline">
+                  {decodeHtml(articles[0].title)}
+                </h2>
+              </Link>
+              {articles[0].summary && (
+                <p className="font-body text-base text-stone-600 leading-relaxed mt-3 line-clamp-4">{decodeHtml(articles[0].summary)}</p>
+              )}
+              <div className="flex items-center gap-3 mt-3 text-xs text-stone-400 font-sans">
+                <span className="font-medium">{articles[0].source_name}</span>
+                {articles[0].companies?.map((c) => (
+                  <Link key={c.symbol} to="/companies/$symbol" params={{ symbol: c.symbol }}
+                    className="font-semibold text-stone-700 hover:underline">{c.symbol}</Link>
+                ))}
+                {articles[0].published_at && <span>{new Date(articles[0].published_at).toLocaleString()}</span>}
+              </div>
+            </div>
+            {/* Secondary articles */}
+            <div className="lg:col-span-5 pl-0 lg:pl-8 mt-4 lg:mt-0">
+              {articles.slice(1, 4).map((a, i) => (
+                <div key={a.id} className={`${i > 0 ? "mt-4 pt-4 border-t border-stone-200" : ""}`}>
+                  <Link to="/articles/$articleId" params={{ articleId: String(a.id) }} className="group">
+                    <h3 className="font-serif text-lg font-bold text-stone-900 group-hover:underline leading-snug">{decodeHtml(a.title)}</h3>
+                    {a.summary && <p className="font-body text-sm text-stone-600 line-clamp-2 mt-1">{decodeHtml(a.summary)}</p>}
+                  </Link>
+                  <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans">
+                    <span className="font-medium">{a.source_name}</span>
+                    {a.companies?.map((c) => (
+                      <Link key={c.symbol} to="/companies/$symbol" params={{ symbol: c.symbol }}
+                        className="font-semibold text-stone-700 hover:underline">{c.symbol}</Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
-        {lead && (
-          <div className="lg:col-span-7 py-6 pr-0 lg:pr-8 lg:border-r border-stone-300">
-            <span className="text-xs font-sans font-semibold uppercase tracking-wider text-stone-400">Top Story</span>
-            <h2 className="mt-2 font-serif text-4xl font-black leading-tight text-stone-900">
-              {lead.company} Outlook Turns{" "}
-              <span className={lead.direction === "bullish" ? "text-emerald-700" : "text-red-700"}>
-                {lead.direction === "bullish" ? "Bullish" : "Bearish"}
-              </span>
-            </h2>
-            <p className="mt-1 font-sans text-sm text-stone-400">
-              Confidence rated at {(lead.confidence * 100).toFixed(0)}% &bull; {lead.signal_count} contributing signals
-              {lead.target_date && <> &bull; Target: {new Date(lead.target_date).toLocaleDateString()}</>}
-            </p>
-            <p className="font-body text-base text-stone-700 leading-relaxed mt-4">
-              {lead.reasoning}
-            </p>
-            <Link
-              to="/companies/$symbol"
-              params={{ symbol: lead.company }}
-              className="inline-block mt-4 text-sm font-sans font-medium text-stone-900 underline underline-offset-2 decoration-stone-300 hover:decoration-stone-900"
-            >
-              Full coverage of {lead.company} &rarr;
-            </Link>
-          </div>
-        )}
+      </div>
 
-        {/* Secondary stories */}
-        <div className="lg:col-span-5 py-6 pl-0 lg:pl-8">
-          {secondary?.map((p, i) => (
-            <div key={p.id} className={`${i > 0 ? "mt-6 pt-6 border-t border-stone-200" : ""}`}>
-              <Link to="/companies/$symbol" params={{ symbol: p.company }} className="group">
-                <h3 className="font-serif text-xl font-bold text-stone-900 group-hover:underline leading-snug">
-                  {p.company}: {p.direction === "bullish" ? "Gains Expected" : "Losses Anticipated"} on {p.signal_count}-Signal Consensus
-                </h3>
-                <p className="font-body text-sm text-stone-600 leading-relaxed line-clamp-3 mt-2">{p.reasoning}</p>
-                <div className="mt-2 flex items-center gap-3">
+      {/* Predictions */}
+      {predictions && predictions.length > 0 && (
+        <section className="py-6 border-t border-stone-300">
+          <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Predictions</h3>
+          <div className="h-px bg-stone-900 mb-4" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {predictions.slice(0, 6).map((p) => (
+              <Link key={p.id} to="/companies/$symbol" params={{ symbol: p.company }} className="group border border-stone-200 rounded p-4 hover:border-stone-400 transition-colors">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-serif font-bold text-stone-900 group-hover:underline">{p.company}</span>
                   <SignalBadge direction={p.direction} confidence={p.confidence} />
-                  <span className="text-xs text-stone-400 font-sans">{new Date(p.created_at).toLocaleTimeString()}</span>
+                </div>
+                <p className="font-body text-sm text-stone-600 line-clamp-3">{p.reasoning}</p>
+                <div className="flex items-center gap-2 mt-2 text-xs text-stone-400 font-sans">
+                  <span>{p.signal_count} signal{p.signal_count !== 1 ? "s" : ""}</span>
+                  {p.magnitude != null && (
+                    <>
+                      <span>&bull;</span>
+                      <span className={`font-semibold ${p.magnitude >= 0.7 ? "text-stone-900" : p.magnitude >= 0.4 ? "text-stone-600" : "text-stone-400"}`}>
+                        {p.magnitude >= 0.7 ? "High" : p.magnitude >= 0.4 ? "Medium" : "Low"} conviction
+                      </span>
+                    </>
+                  )}
                 </div>
               </Link>
-            </div>
-          ))}
-        </div>
-      </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Trending */}
       {trends && trends.length > 0 && (
@@ -212,24 +233,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Additional predictions */}
-          {rest && rest.length > 0 && (
-            <>
-              <h3 className="font-serif text-base font-bold text-stone-900 mt-6 mb-1">Also Moving</h3>
-              <div className="h-px bg-stone-900 mb-4" />
-              {rest.map((p) => (
-                <div key={p.id} className="border-b border-stone-200 pb-3 mb-3">
-                  <Link to="/companies/$symbol" params={{ symbol: p.company }} className="group">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-serif font-bold text-stone-900 group-hover:underline">{p.company}</span>
-                      <SignalBadge direction={p.direction} />
-                    </div>
-                    <p className="font-body text-sm text-stone-600 line-clamp-2">{p.reasoning}</p>
-                  </Link>
-                </div>
-              ))}
-            </>
-          )}
+
         </div>
 
         {/* Col 3: Headlines */}
@@ -240,7 +244,7 @@ export default function Dashboard() {
             <EmptyState message="No articles yet. Headlines appear once RSS feeds are polled." />
           ) : (
             <div className="space-y-4">
-              {articles.slice(0, 6).map((a) => (
+              {articles.slice(4, 10).map((a) => (
               <div key={a.id} className="border-b border-stone-200 pb-3">
                 <Link to="/articles/$articleId" params={{ articleId: String(a.id) }} className="font-serif text-sm font-bold text-stone-900 leading-snug hover:underline cursor-pointer block">{decodeHtml(a.title)}</Link>
                 {a.summary && (

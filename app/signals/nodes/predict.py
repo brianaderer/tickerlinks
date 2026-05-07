@@ -6,11 +6,16 @@ from datetime import datetime, timezone
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 
+import redis
+
 from app.signals.state import EngineState
 from app.signals.llm_utils import parse_llm_json
 from app.signals.research import research_company
 
 logger = logging.getLogger(__name__)
+
+FINGERPRINT_TTL = 3600
+FINGERPRINT_PREFIX = "predict:fp:"
 
 SYSTEM_PROMPT = """You are a senior portfolio analyst with access to a research tool that searches an article database. Today is {today}.
 
@@ -110,9 +115,19 @@ def _format_fundamentals(company_id: int, state: EngineState) -> str:
 
     insider_trades = fund_info.get("insider_trades", [])
     if insider_trades:
-        buys = sum(1 for t in insider_trades if "purchase" in (t.get("transaction_type") or "").lower())
-        sells = sum(1 for t in insider_trades if "sale" in (t.get("transaction_type") or "").lower())
-        lines.append(f"Recent insider activity: {buys} buys, {sells} sells (last {len(insider_trades)} transactions)")
+        buys = [t for t in insider_trades if t.get("transaction_type") == "Purchase" and t.get("shares", 0) > 0]
+        sells = [t for t in insider_trades if t.get("transaction_type") == "Sale" and t.get("shares", 0) > 0]
+        lines.append(f"Insider activity (last {len(insider_trades)} filings): {len(buys)} purchases, {len(sells)} sales")
+        for t in (buys + sells)[:10]:
+            name = t.get("filer_name", "?")
+            title = f" ({t['filer_title']})" if t.get("filer_title") else ""
+            ttype = t.get("transaction_type", "?")
+            shares = t.get("shares", 0)
+            price = f" @ ${t['price_per_share']:.2f}" if t.get("price_per_share") else ""
+            date = t.get("date", "?")
+            lines.append(f"  - {name}{title}: {ttype} {shares:,.0f} shares{price} on {date}")
+    else:
+        lines.append("No insider trading activity on file.")
 
     return "\n".join(lines) if lines else "No fundamentals data available."
 
@@ -121,22 +136,50 @@ def _strip_think_tags(text: str) -> str:
     return re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
 
 
+def _get_redis():
+    url = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
+    return redis.from_url(url, decode_responses=True)
+
+
+def _check_fingerprint(r, company_id: int, fingerprint: str) -> bool:
+    key = f"{FINGERPRINT_PREFIX}{company_id}"
+    stored = r.get(key)
+    return stored == fingerprint
+
+
+def _store_fingerprint(r, company_id: int, fingerprint: str):
+    key = f"{FINGERPRINT_PREFIX}{company_id}"
+    r.setex(key, FINGERPRINT_TTL, fingerprint)
+
+
+def _reuse_existing_prediction(pred: dict) -> bool:
+    from app.models import Prediction
+    existing = Prediction.query.filter_by(
+        company_id=pred["company_id"]
+    ).order_by(Prediction.created_at.desc()).first()
+    if not existing or not existing.reasoning:
+        return False
+    pred["direction"] = existing.direction
+    pred["confidence"] = float(existing.confidence)
+    pred["magnitude"] = float(existing.magnitude) if existing.magnitude else pred["confidence"] * 0.5
+    pred["reasoning"] = existing.reasoning
+    pred["reused"] = True
+    return True
+
+
 def predict_node(state: EngineState) -> EngineState:
     predictions = state.get("predictions", [])
     if not predictions:
         return state
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    r = _get_redis()
 
     api_key = os.environ.get("DEEPINFRA_API_KEY", "")
     if not api_key:
         logger.info("No LLM API key — using signal-only reasoning")
         for pred in predictions:
-            signals = state.get("signals", [])
-            company_signals = [s for s in signals if s["company_id"] == pred["company_id"]]
-            signal_summary = ", ".join(s["signal_name"] for s in company_signals)
-            pred["reasoning"] = f"{pred['direction'].title()} outlook based on {len(company_signals)} signals: {signal_summary}."
-            pred["magnitude"] = pred["confidence"] * 0.5
+            _fallback_reasoning(pred, state)
         return state
 
     llm = ChatOpenAI(
@@ -148,7 +191,18 @@ def predict_node(state: EngineState) -> EngineState:
     )
     llm_with_tools = llm.bind_tools([research_company])
 
+    skipped = 0
+    analyzed = 0
+
     for pred in predictions:
+        fingerprint = pred.get("fingerprint", "")
+
+        if fingerprint and _check_fingerprint(r, pred["company_id"], fingerprint):
+            if _reuse_existing_prediction(pred):
+                skipped += 1
+                logger.info("Skipping %s — signals unchanged", pred["symbol"])
+                continue
+
         try:
             signal_context = _format_signals(pred, state)
             price_context = _format_price(pred["company_id"], state)
@@ -190,12 +244,21 @@ def predict_node(state: EngineState) -> EngineState:
                 pred["reasoning"] = _strip_think_tags(text)
                 pred["magnitude"] = pred["confidence"] * 0.5
 
+            if fingerprint:
+                _store_fingerprint(r, pred["company_id"], fingerprint)
+            analyzed += 1
+
         except Exception:
             logger.exception("Failed to generate prediction for %s", pred["symbol"])
-            signals = state.get("signals", [])
-            company_signals = [s for s in signals if s["company_id"] == pred["company_id"]]
-            signal_summary = ", ".join(s["signal_name"] for s in company_signals)
-            pred["reasoning"] = f"{pred['direction'].title()} outlook based on {len(company_signals)} signals: {signal_summary}."
-            pred["magnitude"] = pred["confidence"] * 0.5
+            _fallback_reasoning(pred, state)
 
+    logger.info("Predict: %d analyzed, %d skipped (unchanged)", analyzed, skipped)
     return state
+
+
+def _fallback_reasoning(pred: dict, state: EngineState):
+    signals = state.get("signals", [])
+    company_signals = [s for s in signals if s["company_id"] == pred["company_id"]]
+    signal_summary = ", ".join(s["signal_name"] for s in company_signals)
+    pred["reasoning"] = f"{pred['direction'].title()} outlook based on {len(company_signals)} signals: {signal_summary}."
+    pred["magnitude"] = pred["confidence"] * 0.5

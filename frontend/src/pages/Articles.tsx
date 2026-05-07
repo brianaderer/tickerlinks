@@ -49,9 +49,9 @@ export default function Articles() {
           <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Sentiment Index</h3>
           <div className="h-px bg-stone-900 mb-4" />
           <div className="border border-stone-200 rounded p-4">
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={sentiment}>
-                <XAxis dataKey="symbol" tick={{ fill: "#78716c", fontSize: 12, fontFamily: "Inter" }} tickLine={false} axisLine={false} />
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={sentiment} margin={{ bottom: 40 }}>
+                <XAxis dataKey="symbol" tick={{ fill: "#78716c", fontSize: 11, fontFamily: "Inter", angle: -45, textAnchor: "end" }} tickLine={false} axisLine={false} interval={0} height={60} />
                 <YAxis tick={{ fill: "#78716c", fontSize: 11, fontFamily: "Inter" }} tickLine={false} axisLine={false} domain={[-1, 1]} />
                 <Tooltip contentStyle={{ backgroundColor: "#fafaf9", border: "1px solid #d6d3d1", borderRadius: 4, fontSize: 12, fontFamily: "Inter" }} />
                 <Bar dataKey="sentiment_score" radius={[2, 2, 0, 0]}>
