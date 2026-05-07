@@ -124,28 +124,51 @@ def run_company_prediction(company_id: int):
     }]
 
     state = predict_node(state)
-    state = evaluate_node(state)
-    state = output_node(state)
     state = digest_node(state)
+
+    from app.extensions import db
+    now = datetime.now(timezone.utc)
+    target = now + timedelta(days=7)
+    pred_data = state.get("predictions", [{}])[0] if state.get("predictions") else {}
+
+    existing = Prediction.query.filter_by(company_id=company_id).order_by(
+        Prediction.created_at.desc()
+    ).first()
+    if existing:
+        existing.direction = pred_data.get("direction", direction)
+        existing.confidence = float(pred_data.get("confidence", confidence))
+        existing.magnitude = float(pred_data.get("magnitude", 0.5)) if pred_data.get("magnitude") else 0.5
+        existing.reasoning = pred_data.get("reasoning", "")
+        existing.target_date = target
+        existing.created_at = now
+        db.session.commit()
+        pred = existing
+    else:
+        pred = Prediction(
+            company_id=company_id,
+            direction=pred_data.get("direction", direction),
+            confidence=float(pred_data.get("confidence", confidence)),
+            magnitude=float(pred_data.get("magnitude", 0.5)) if pred_data.get("magnitude") else 0.5,
+            reasoning=pred_data.get("reasoning", ""),
+            target_date=target,
+            created_at=now,
+        )
+        db.session.add(pred)
+        db.session.commit()
 
     logger.info("Manual prediction complete for %s", symbol)
 
-    prediction_data = None
-    pred = Prediction.query.filter_by(company_id=company_id).order_by(
-        Prediction.created_at.desc()
-    ).first()
-    if pred:
-        prediction_data = {
-            "id": pred.id,
-            "company": symbol,
-            "direction": pred.direction,
-            "confidence": float(pred.confidence),
-            "magnitude": float(pred.magnitude) if pred.magnitude else None,
-            "reasoning": pred.reasoning,
-            "target_date": pred.target_date.isoformat() if pred.target_date else None,
-            "created_at": pred.created_at.isoformat(),
-            "signal_count": len(pred.signal_matches),
-        }
+    prediction_data = {
+        "id": pred.id,
+        "company": symbol,
+        "direction": pred.direction,
+        "confidence": float(pred.confidence),
+        "magnitude": float(pred.magnitude) if pred.magnitude else None,
+        "reasoning": pred.reasoning,
+        "target_date": pred.target_date.isoformat() if pred.target_date else None,
+        "created_at": pred.created_at.isoformat(),
+        "signal_count": len(matches),
+    }
 
     sse_publish("signals", "analysis_complete", {
         "mode": "manual",
