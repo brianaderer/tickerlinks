@@ -439,7 +439,7 @@ def signal_digests():
         latest_subq,
         (SignalDigest.company_id == latest_subq.c.company_id)
         & (SignalDigest.generated_at == latest_subq.c.max_gen),
-    ).order_by(SignalDigest.net_confidence.desc()).limit(20).all()
+    ).order_by(SignalDigest.generated_at.desc()).limit(20).all()
 
     return jsonify([
         {
