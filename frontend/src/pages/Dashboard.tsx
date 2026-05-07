@@ -232,7 +232,7 @@ export default function Dashboard() {
             <EmptyState message="No signal digests yet. Digests appear after the signal engine aggregates matches." />
           ) : (
             <div className="space-y-4">
-              {digests.map((d) => (
+              {digests.slice(0, 10).map((d) => (
                 <div key={`${d.symbol}-${d.generated_at}`} className="border-b border-stone-200 pb-3">
                   <div className="flex items-center justify-between mb-1">
                     <Link

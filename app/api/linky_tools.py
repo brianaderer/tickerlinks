@@ -2,10 +2,12 @@ from datetime import datetime, timedelta, timezone
 
 from langchain_core.tools import tool
 
+from sqlalchemy import func
+
 from app.extensions import db
 from app.models import (
     Company, Fundamentals, PriceHistory, SignalMatch, Prediction,
-    Signal, Report, TrendSnapshot,
+    Signal, Report, TrendSnapshot, SignalDigest,
 )
 from app.signals.research import research_company  # re-export existing tool
 
@@ -68,7 +70,6 @@ def get_company_profile(symbol: str) -> str:
                 f"at {m.detected_at.strftime('%Y-%m-%d %H:%M')}"
             )
 
-    from sqlalchemy import func
     pred = (
         Prediction.query.filter_by(company_id=company.id)
         .order_by(Prediction.created_at.desc())
@@ -166,4 +167,193 @@ def get_signal_weights() -> str:
     return "\n".join(parts)
 
 
-LINKY_TOOLS = [research_company, get_company_profile, get_trends, get_market_brief, get_signal_weights]
+@tool
+def screen_stocks(sort_by: str = "prediction", direction: str = "bullish", limit: int = 10) -> str:
+    """Screen and rank stocks across the entire tracked universe.
+
+    Args:
+        sort_by: Ranking criteria. One of "prediction" (highest confidence predictions),
+                 "pe_forward" (lowest forward P/E), "dividend" (highest dividend yield),
+                 "signals" (most recent signal matches), "momentum" (7-day price change).
+        direction: Filter predictions/signals by direction: "bullish", "bearish", or "any".
+        limit: Number of results to return (max 20).
+
+    Returns:
+        Ranked list of stocks matching the criteria.
+    """
+    limit = min(limit, 20)
+
+    if sort_by == "prediction":
+        latest_subq = (
+            db.session.query(
+                Prediction.company_id,
+                func.max(Prediction.created_at).label("max_created"),
+            )
+            .group_by(Prediction.company_id)
+            .subquery()
+        )
+        query = (
+            Prediction.query.join(
+                latest_subq,
+                (Prediction.company_id == latest_subq.c.company_id)
+                & (Prediction.created_at == latest_subq.c.max_created),
+            )
+        )
+        if direction != "any":
+            query = query.filter(Prediction.direction == direction)
+        preds = query.order_by(Prediction.confidence.desc()).limit(limit).all()
+        if not preds:
+            return f"No {direction} predictions found."
+        parts = [f"Top {len(preds)} {direction} predictions by confidence:\n"]
+        for p in preds:
+            mag = f", magnitude {p.magnitude:.0%}" if p.magnitude else ""
+            parts.append(
+                f"  {p.company.symbol}: {p.direction} {p.confidence:.0%}{mag}"
+                f" — {(p.reasoning or '')[:120]}"
+            )
+        return "\n".join(parts)
+
+    elif sort_by == "pe_forward":
+        latest_subq = (
+            db.session.query(
+                Fundamentals.company_id,
+                func.max(Fundamentals.snapshot_at).label("max_snap"),
+            )
+            .group_by(Fundamentals.company_id)
+            .subquery()
+        )
+        funds = (
+            Fundamentals.query.join(
+                latest_subq,
+                (Fundamentals.company_id == latest_subq.c.company_id)
+                & (Fundamentals.snapshot_at == latest_subq.c.max_snap),
+            )
+            .filter(Fundamentals.pe_forward > 0)
+            .order_by(Fundamentals.pe_forward.asc())
+            .limit(limit)
+            .all()
+        )
+        if not funds:
+            return "No forward P/E data available."
+        parts = [f"Top {len(funds)} stocks by lowest forward P/E:\n"]
+        for f in funds:
+            price = f"${f.current_price:.2f}" if f.current_price else "n/a"
+            parts.append(
+                f"  {f.company.symbol}: P/E(fwd) {f.pe_forward:.1f}, price {price}"
+            )
+        return "\n".join(parts)
+
+    elif sort_by == "dividend":
+        latest_subq = (
+            db.session.query(
+                Fundamentals.company_id,
+                func.max(Fundamentals.snapshot_at).label("max_snap"),
+            )
+            .group_by(Fundamentals.company_id)
+            .subquery()
+        )
+        funds = (
+            Fundamentals.query.join(
+                latest_subq,
+                (Fundamentals.company_id == latest_subq.c.company_id)
+                & (Fundamentals.snapshot_at == latest_subq.c.max_snap),
+            )
+            .filter(Fundamentals.dividend_yield > 0)
+            .order_by(Fundamentals.dividend_yield.desc())
+            .limit(limit)
+            .all()
+        )
+        if not funds:
+            return "No dividend data available."
+        parts = [f"Top {len(funds)} stocks by dividend yield:\n"]
+        for f in funds:
+            parts.append(
+                f"  {f.company.symbol}: yield {f.dividend_yield:.2%}"
+                f", P/E(fwd) {f.pe_forward:.1f}" if f.pe_forward else ""
+            )
+        return "\n".join(parts)
+
+    elif sort_by == "signals":
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        query = (
+            db.session.query(
+                SignalMatch.company_id,
+                func.count(SignalMatch.id).label("cnt"),
+            )
+            .filter(SignalMatch.detected_at >= cutoff)
+        )
+        if direction != "any":
+            query = query.filter(SignalMatch.direction == direction)
+        rows = (
+            query.group_by(SignalMatch.company_id)
+            .order_by(func.count(SignalMatch.id).desc())
+            .limit(limit)
+            .all()
+        )
+        if not rows:
+            return f"No {direction} signal matches in the last 7 days."
+        parts = [f"Top {len(rows)} stocks by {direction} signal count (7d):\n"]
+        for company_id, cnt in rows:
+            comp = Company.query.get(company_id)
+            if comp:
+                parts.append(f"  {comp.symbol}: {cnt} signals")
+        return "\n".join(parts)
+
+    elif sort_by == "momentum":
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        latest_subq = (
+            db.session.query(
+                PriceHistory.company_id,
+                func.max(PriceHistory.timestamp).label("max_ts"),
+            )
+            .group_by(PriceHistory.company_id)
+            .subquery()
+        )
+        oldest_subq = (
+            db.session.query(
+                PriceHistory.company_id,
+                func.min(PriceHistory.timestamp).label("min_ts"),
+            )
+            .filter(PriceHistory.timestamp >= cutoff)
+            .group_by(PriceHistory.company_id)
+            .subquery()
+        )
+        companies = Company.query.filter_by(active=True).all()
+        momentum = []
+        for c in companies:
+            latest = (
+                PriceHistory.query.filter_by(company_id=c.id)
+                .order_by(PriceHistory.timestamp.desc())
+                .first()
+            )
+            oldest = (
+                PriceHistory.query.filter(
+                    PriceHistory.company_id == c.id,
+                    PriceHistory.timestamp >= cutoff,
+                )
+                .order_by(PriceHistory.timestamp.asc())
+                .first()
+            )
+            if latest and oldest and oldest.open and oldest.open > 0:
+                change = (latest.close - oldest.open) / oldest.open
+                momentum.append((c.symbol, change, latest.close))
+
+        if direction == "bullish":
+            momentum.sort(key=lambda x: x[1], reverse=True)
+        elif direction == "bearish":
+            momentum.sort(key=lambda x: x[1])
+        else:
+            momentum.sort(key=lambda x: abs(x[1]), reverse=True)
+
+        momentum = momentum[:limit]
+        if not momentum:
+            return "No price data available for momentum ranking."
+        parts = [f"Top {len(momentum)} stocks by 7-day momentum ({direction}):\n"]
+        for sym, change, price in momentum:
+            parts.append(f"  {sym}: {change:+.2%} (${price:.2f})")
+        return "\n".join(parts)
+
+    return f"Unknown sort_by value: {sort_by}. Use prediction, pe_forward, dividend, signals, or momentum."
+
+
+LINKY_TOOLS = [research_company, get_company_profile, get_trends, get_market_brief, get_signal_weights, screen_stocks]
