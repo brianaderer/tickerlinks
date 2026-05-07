@@ -81,7 +81,7 @@ Sentiment must be one of: bullish, bearish, neutral
 Relevance must be one of: primary, secondary"""
 
 
-def match_tickers(title: str, summary: str) -> dict:
+def match_tickers(title: str, summary: str, full_text: str = "") -> dict:
     llm = _get_llm()
     if not llm:
         return {}
@@ -89,12 +89,14 @@ def match_tickers(title: str, summary: str) -> dict:
     company_list = _get_company_list_prompt()
     valid = _get_valid_symbols()
 
+    body = (full_text or summary or "")[:4000]
+
     user_msg = f"""TRACKED COMPANIES:
 {company_list}
 
 ARTICLE:
 Title: {title}
-Summary: {(summary or '')[:600]}
+Body: {body}
 
 Identify all tracked companies mentioned in or relevant to this article."""
 

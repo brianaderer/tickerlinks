@@ -130,7 +130,7 @@ def _process_article(article: NewsArticle):
         return {}
 
     full_text = article.full_text
-    companies = match_tickers(title, summary)
+    companies = match_tickers(title, summary, full_text or "")
 
     db.session.execute(article_companies.delete().where(
         article_companies.c.article_id == article.id))
