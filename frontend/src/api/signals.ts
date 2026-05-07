@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "./client";
-import type { Signal, SignalMatch, SignalWeight } from "../types";
+import type { Signal, SignalMatch, SignalWeight, SignalDigest } from "../types";
 
 export function useSignals() {
   return useQuery({
@@ -19,6 +19,13 @@ export function useSignalMatches(company?: string, type?: string) {
       const qs = params.toString();
       return apiFetch<SignalMatch[]>(`/signals/matches${qs ? `?${qs}` : ""}`);
     },
+  });
+}
+
+export function useSignalDigests() {
+  return useQuery({
+    queryKey: ["signalDigests"],
+    queryFn: () => apiFetch<SignalDigest[]>("/signals/digests"),
   });
 }
 

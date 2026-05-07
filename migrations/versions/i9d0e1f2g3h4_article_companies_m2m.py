@@ -25,7 +25,7 @@ def upgrade():
     )
 
     op.drop_index("ix_article_company_pub", table_name="news_articles")
-    op.drop_constraint("news_articles_company_id_fkey", "news_articles", type_="foreignkey")
+    op.drop_constraint("news_articles_ticker_id_fkey", "news_articles", type_="foreignkey")
     op.drop_index("ix_news_articles_company_id", table_name="news_articles")
     op.drop_column("news_articles", "company_id")
 

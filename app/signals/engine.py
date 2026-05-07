@@ -9,6 +9,7 @@ from app.signals.nodes.aggregate import aggregate_node
 from app.signals.nodes.predict import predict_node
 from app.signals.nodes.evaluate import evaluate_node, should_refine, refine_node
 from app.signals.nodes.output import output_node
+from app.signals.nodes.digest import digest_node
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ def build_signal_graph() -> StateGraph:
     graph.add_node("evaluate", evaluate_node)
     graph.add_node("refine", refine_node)
     graph.add_node("output", output_node)
+    graph.add_node("digest", digest_node)
 
     graph.set_entry_point("gather")
     graph.add_edge("gather", "detect")
@@ -34,7 +36,8 @@ def build_signal_graph() -> StateGraph:
         "output": "output",
     })
     graph.add_edge("refine", "detect")
-    graph.add_edge("output", END)
+    graph.add_edge("output", "digest")
+    graph.add_edge("digest", END)
 
     return graph.compile()
 

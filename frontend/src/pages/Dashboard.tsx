@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useLatestReport } from "../api/reports";
 import { usePredictions } from "../api/predictions";
-import { useSignalMatches } from "../api/signals";
+import { useSignalDigests } from "../api/signals";
 import { useArticles, useSentiment } from "../api/articles";
 import SignalBadge from "../components/SignalBadge";
 import AiGenerated from "../components/AiGenerated";
@@ -11,7 +11,7 @@ import { decodeHtml } from "../utils";
 export default function Dashboard() {
   const { data: report } = useLatestReport();
   const { data: predictions } = usePredictions();
-  const { data: matches } = useSignalMatches();
+  const { data: digests } = useSignalDigests();
   const { data: articles } = useArticles();
   const { data: sentiment } = useSentiment();
 
@@ -175,7 +175,7 @@ export default function Dashboard() {
             <EmptyState message="No sentiment data yet. Scores appear once articles are fetched and analyzed." />
           ) : (
             <div className="space-y-3">
-              {sentiment.map((s) => (
+              {sentiment.slice(0, 10).map((s) => (
                 <div key={s.symbol} className="border-b border-stone-200 pb-3">
                 <div className="flex items-center justify-between mb-1.5">
                   <Link
@@ -213,9 +213,7 @@ export default function Dashboard() {
                       <span className="font-serif font-bold text-stone-900 group-hover:underline">{p.company}</span>
                       <SignalBadge direction={p.direction} />
                     </div>
-                    <AiGenerated label="AI reasoning">
-                      <p className="font-body text-sm text-stone-600 line-clamp-2">{p.reasoning}</p>
-                    </AiGenerated>
+                    <p className="font-body text-sm text-stone-600 line-clamp-2">{p.reasoning}</p>
                   </Link>
                 </div>
               ))}
@@ -235,9 +233,7 @@ export default function Dashboard() {
               <div key={a.id} className="border-b border-stone-200 pb-3">
                 <Link to="/articles/$articleId" params={{ articleId: String(a.id) }} className="font-serif text-sm font-bold text-stone-900 leading-snug hover:underline cursor-pointer block">{decodeHtml(a.title)}</Link>
                 {a.summary && (
-                  <AiGenerated label="AI summary" className="mt-1">
-                    <p className="font-body text-xs text-stone-500 line-clamp-2">{decodeHtml(a.summary)}</p>
-                  </AiGenerated>
+                  <p className="font-body text-xs text-stone-500 line-clamp-2 mt-1">{decodeHtml(a.summary)}</p>
                 )}
                 <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans">
                   {a.companies?.map((c) => (

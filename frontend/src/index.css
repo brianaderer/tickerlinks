@@ -6,3 +6,11 @@
   --font-body: 'Libre Baskerville', 'Georgia', serif;
   --font-sans: 'Inter', system-ui, sans-serif;
 }
+
+a, button, [role="button"] {
+  cursor: pointer;
+}
+
+a:hover {
+  text-decoration-color: currentColor;
+}

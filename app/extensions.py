@@ -34,7 +34,7 @@ def celery_init_app(app):
         },
         "run-signal-analysis": {
             "task": "app.tasks.analyze.run_signal_analysis",
-            "schedule": 3600.0,
+            "schedule": 900.0,  # every 15 minutes
         },
         "check-backtest-windows": {
             "task": "app.tasks.backtest.check_backtest_windows",

@@ -1,46 +1,43 @@
 import logging
-import os
 from collections import defaultdict
 from datetime import datetime, timezone
 
-import chromadb
+from app.articles.processor import get_typesense_client, ensure_collection, COLLECTION_NAME
 
 logger = logging.getLogger(__name__)
 
-_chroma_collection = None
-
-
-def _get_collection():
-    global _chroma_collection
-    if _chroma_collection is None:
-        host = os.environ.get("CHROMA_HOST", "chromadb")
-        port = int(os.environ.get("CHROMA_PORT", "8000"))
-        client = chromadb.HttpClient(host=host, port=port)
-        _chroma_collection = client.get_or_create_collection(
-            name="article_chunks",
-            metadata={"hnsw:space": "cosine"},
-        )
-    return _chroma_collection
-
 
 def _load_chunk0_metadatas(before: datetime = None, after: datetime = None) -> list[dict]:
-    col = _get_collection()
-    docs = col.get(limit=50000, include=["metadatas"])
+    client = get_typesense_client()
+    ensure_collection()
+
+    filters = ["chunk_index:0"]
+    if before:
+        filters.append(f"published_at_ts:<={int(before.timestamp())}")
+    if after:
+        filters.append(f"published_at_ts:>={int(after.timestamp())}")
+
+    search_params = {
+        "q": "*",
+        "filter_by": " && ".join(filters),
+        "per_page": 250,
+        "page": 1,
+        "include_fields": "article_id,companies,company_sentiments,company_relevances,"
+                          "source_name,published_at",
+    }
+
     results = []
-    for m in docs["metadatas"]:
-        if m.get("chunk_index", 0) != 0:
-            continue
-        if before or after:
-            ts = _parse_timestamp(m.get("published_at", ""))
-            if not ts:
-                continue
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            if before and ts > before:
-                continue
-            if after and ts < after:
-                continue
-        results.append(m)
+    while True:
+        resp = client.collections[COLLECTION_NAME].documents.search(search_params)
+        hits = resp.get("hits", [])
+        if not hits:
+            break
+        for hit in hits:
+            results.append(hit["document"])
+        if len(hits) < 250:
+            break
+        search_params["page"] += 1
+
     return results
 
 
@@ -55,10 +52,12 @@ def _parse_sentiments(sentiments_str: str) -> dict[str, str]:
     return result
 
 
-def _parse_companies(companies_str: str) -> list[str]:
-    if not companies_str:
+def _parse_companies(companies_val) -> list[str]:
+    if not companies_val:
         return []
-    return [c.strip().upper() for c in companies_str.split(",") if c.strip()]
+    if isinstance(companies_val, list):
+        return [c.strip().upper() for c in companies_val if c.strip()]
+    return [c.strip().upper() for c in companies_val.split(",") if c.strip()]
 
 
 def _parse_timestamp(ts_str: str) -> datetime | None:

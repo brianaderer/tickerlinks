@@ -11,6 +11,7 @@ import CompanyDetail from "./pages/CompanyDetail";
 import Signals from "./pages/Signals";
 import Predictions from "./pages/Predictions";
 import Articles from "./pages/Articles";
+import ArticleReader from "./pages/ArticleReader";
 import Reports from "./pages/Reports";
 
 const rootRoute = createRootRoute({ component: Layout });
@@ -51,6 +52,12 @@ const articlesRoute = createRoute({
   component: Articles,
 });
 
+const articleReaderRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/articles/$articleId",
+  component: ArticleReader,
+});
+
 const reportsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/reports",
@@ -64,6 +71,7 @@ const routeTree = rootRoute.addChildren([
   signalsRoute,
   predictionsRoute,
   articlesRoute,
+  articleReaderRoute,
   reportsRoute,
 ]);
 

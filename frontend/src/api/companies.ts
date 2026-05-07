@@ -13,10 +13,12 @@ export function useCompanies(index?: string) {
 export function useCompanyPrices(symbol: string, limit = 100) {
   return useQuery({
     queryKey: ["prices", symbol, limit],
-    queryFn: () =>
-      apiFetch<PricePoint[]>(
+    queryFn: async () => {
+      const data = await apiFetch<PricePoint[]>(
         `/companies/${symbol}/prices?limit=${limit}`,
-      ),
+      );
+      return data.reverse();
+    },
     enabled: !!symbol,
   });
 }

@@ -30,7 +30,7 @@ export default function CompanyTable({ companies }: Props) {
           {companies.map((c) => (
             <tr key={c.id} className="border-b border-stone-200 hover:bg-stone-100">
               <td className="py-3 pr-4">
-                <Link to="/companies/$symbol" params={{ symbol: c.symbol }} className="text-stone-900 font-serif font-bold hover:underline">
+                <Link to="/companies/$symbol" params={{ symbol: c.symbol }} className="text-stone-900 font-serif font-bold hover:underline cursor-pointer">
                   {c.symbol}
                 </Link>
               </td>

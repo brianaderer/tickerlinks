@@ -1,6 +1,5 @@
 import { useParams, Link, useRouter } from "@tanstack/react-router";
 import { useArticle } from "../api/articles";
-import AiGenerated from "../components/AiGenerated";
 import EmptyState from "../components/EmptyState";
 import { HiOutlineArrowLeft } from "react-icons/hi2";
 import { decodeHtml } from "../utils";
@@ -9,10 +8,17 @@ export default function ArticleReader() {
   const { articleId } = useParams({ strict: false });
   const router = useRouter();
   const id = Number(articleId);
-  const { data: article, isLoading } = useArticle(id);
+  const { data: article, isLoading, isError } = useArticle(id);
 
-  if (isLoading) return <p className="text-stone-400 font-sans py-8">Loading...</p>;
-  if (!article) return <EmptyState message="Article not found." />;
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-3 py-12 justify-center">
+        <div className="w-4 h-4 border-2 border-stone-300 border-t-stone-700 rounded-full animate-spin" />
+        <span className="text-sm font-sans text-stone-400">Loading article...</span>
+      </div>
+    );
+  }
+  if (isError || !article) return <EmptyState message="Article not found." />;
 
   const paragraphs = article.full_text
     ? article.full_text.split(/\n\n+/).filter((p) => p.trim().length > 0)
@@ -61,11 +67,8 @@ export default function ArticleReader() {
         )}
       </header>
 
-      {/* AI Summary */}
       {article.summary && (
-        <AiGenerated label="AI summary" className="mb-8">
-          <p className="font-body text-base text-stone-700 leading-relaxed">{decodeHtml(article.summary)}</p>
-        </AiGenerated>
+        <p className="font-body text-base text-stone-600 leading-relaxed italic border-l-2 border-stone-200 pl-3 mb-8">{decodeHtml(article.summary)}</p>
       )}
 
       {/* Full text */}

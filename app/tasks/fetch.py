@@ -6,6 +6,7 @@ from app.sources.market import MarketFetcher
 from app.sources.news import NewsFetcher
 from app.sources.edgar import EdgarFetcher
 from app.sources.fundamentals import FundamentalsFetcher
+from app.sse import sse_publish
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ def fetch_market_data():
     fetcher = MarketFetcher(period="1d", interval="15m")
     results = fetcher.fetch()
     logger.info("Market fetch complete: %d rows", len(results))
+    sse_publish("prices", "update", {"rows": len(results)})
     return {"rows_fetched": len(results)}
 
 
@@ -51,6 +53,11 @@ def fetch_news():
     fetcher = NewsFetcher()
     results = fetcher.fetch()
     logger.info("News fetch complete: %d articles", len(results))
+    if results:
+        sse_publish("news", "article_arrived", {
+            "count": len(results),
+            "titles": [r.get("title", "")[:80] for r in results[:5]],
+        })
     return {"articles_fetched": len(results)}
 
 

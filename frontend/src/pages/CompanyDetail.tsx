@@ -1,4 +1,4 @@
-import { useParams } from "@tanstack/react-router";
+import { useParams, Link } from "@tanstack/react-router";
 import { useCompanyPrices } from "../api/companies";
 import { useSignalMatches } from "../api/signals";
 import { usePredictions } from "../api/predictions";
@@ -6,14 +6,30 @@ import { useArticles } from "../api/articles";
 import PriceChart from "../components/PriceChart";
 import PredictionCard from "../components/PredictionCard";
 import SignalBadge from "../components/SignalBadge";
-import AiGenerated from "../components/AiGenerated";
+import { decodeHtml } from "../utils";
 
 export default function CompanyDetail() {
   const { symbol } = useParams({ strict: false });
-  const { data: prices } = useCompanyPrices(symbol!, 100);
-  const { data: matches } = useSignalMatches(symbol);
-  const { data: predictions } = usePredictions(symbol);
-  const { data: articles } = useArticles(symbol);
+  const { data: prices, isLoading: pricesLoading } = useCompanyPrices(symbol!, 5000);
+  const { data: matches, isLoading: matchesLoading } = useSignalMatches(symbol);
+  const { data: predictions, isLoading: predsLoading } = usePredictions(symbol);
+  const { data: articles, isLoading: articlesLoading } = useArticles(symbol);
+
+  const loading = pricesLoading || matchesLoading || predsLoading || articlesLoading;
+
+  if (loading) {
+    return (
+      <div className="space-y-8">
+        <div className="border-b-2 border-stone-900 pb-2">
+          <h2 className="font-serif text-3xl font-black text-stone-900">{symbol}</h2>
+        </div>
+        <div className="flex items-center gap-3 py-12 justify-center">
+          <div className="w-4 h-4 border-2 border-stone-300 border-t-stone-700 rounded-full animate-spin" />
+          <span className="text-sm font-sans text-stone-400">Loading data...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -64,11 +80,9 @@ export default function CompanyDetail() {
           <div className="space-y-3">
             {articles.map((a) => (
               <div key={a.id} className="border-b border-stone-200 pb-3">
-                <p className="font-serif text-sm font-bold text-stone-900">{a.title}</p>
+                <Link to="/articles/$articleId" params={{ articleId: String(a.id) }} className="font-serif text-sm font-bold text-stone-900 hover:underline cursor-pointer block">{decodeHtml(a.title)}</Link>
                 {a.summary && (
-                  <AiGenerated label="AI summary" className="mt-1">
-                    <p className="font-body text-xs text-stone-500 line-clamp-2">{a.summary}</p>
-                  </AiGenerated>
+                  <p className="font-body text-xs text-stone-500 line-clamp-2 mt-1">{decodeHtml(a.summary)}</p>
                 )}
                 <div className="flex gap-3 mt-1.5 text-xs text-stone-400 font-sans">
                   <span>{a.source_name}</span>

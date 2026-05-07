@@ -230,14 +230,29 @@ def list_predictions():
     company_filter = request.args.get("company")
     direction_filter = request.args.get("direction")
 
-    query = Prediction.query.order_by(Prediction.created_at.desc())
+    from sqlalchemy import func
+    latest_subq = (
+        db.session.query(
+            Prediction.company_id,
+            func.max(Prediction.created_at).label("max_created"),
+        )
+        .group_by(Prediction.company_id)
+        .subquery()
+    )
+
+    query = Prediction.query.join(
+        latest_subq,
+        (Prediction.company_id == latest_subq.c.company_id)
+        & (Prediction.created_at == latest_subq.c.max_created),
+    ).order_by(Prediction.created_at.desc())
+
     if company_filter:
         company = Company.query.filter_by(
             symbol=company_filter.upper()
         ).first_or_404()
-        query = query.filter_by(company_id=company.id)
+        query = query.filter(Prediction.company_id == company.id)
     if direction_filter:
-        query = query.filter_by(direction=direction_filter.lower())
+        query = query.filter(Prediction.direction == direction_filter.lower())
 
     predictions = query.limit(limit).all()
     return jsonify(
@@ -247,6 +262,7 @@ def list_predictions():
                 "company": p.company.symbol,
                 "direction": p.direction,
                 "confidence": p.confidence,
+                "magnitude": p.magnitude,
                 "reasoning": p.reasoning,
                 "target_date": p.target_date.isoformat() if p.target_date else None,
                 "created_at": p.created_at.isoformat(),

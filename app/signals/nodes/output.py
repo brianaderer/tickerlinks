@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from app.extensions import db
 from app.models import Signal, SignalMatch, Prediction
 from app.signals.state import EngineState
+from app.sse import sse_publish
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,13 @@ def _persist_signals(raw_signals: list[dict]):
         )
         db.session.add(match)
 
+        sse_publish("signals", "match_fired", {
+            "signal": sig_name,
+            "symbol": sig_data.get("symbol", ""),
+            "direction": direction,
+            "confidence": sig_data["confidence"],
+        })
+
     db.session.commit()
 
 
@@ -64,16 +72,32 @@ def _persist_predictions(predictions: list[dict], raw_signals: list[dict]):
     target = now + timedelta(days=7)
 
     for pred in predictions:
-        prediction = Prediction(
-            company_id=pred["company_id"],
-            direction=pred["direction"],
-            confidence=pred["confidence"],
-            reasoning=pred.get("reasoning", ""),
-            target_date=target,
-            created_at=now,
-        )
-        db.session.add(prediction)
-        db.session.flush()
+        existing = Prediction.query.filter_by(
+            company_id=pred["company_id"]
+        ).order_by(Prediction.created_at.desc()).first()
+
+        if existing:
+            existing.direction = pred["direction"]
+            existing.confidence = pred["confidence"]
+            existing.magnitude = pred.get("magnitude")
+            existing.reasoning = pred.get("reasoning", "")
+            existing.target_date = target
+            existing.created_at = now
+            existing.signal_matches = []
+            db.session.flush()
+            prediction = existing
+        else:
+            prediction = Prediction(
+                company_id=pred["company_id"],
+                direction=pred["direction"],
+                confidence=pred["confidence"],
+                magnitude=pred.get("magnitude"),
+                reasoning=pred.get("reasoning", ""),
+                target_date=target,
+                created_at=now,
+            )
+            db.session.add(prediction)
+            db.session.flush()
 
         company_matches = SignalMatch.query.filter_by(
             company_id=pred["company_id"], detected_at=now

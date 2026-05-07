@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "./client";
-import type { NewsArticle, SentimentResult } from "../types";
+import type { NewsArticle, ArticleDetail, SentimentResult } from "../types";
 
 export function useArticles(company?: string, limit = 50) {
   return useQuery({
@@ -21,6 +21,14 @@ export function useSearchArticles(query: string) {
     queryFn: () =>
       apiFetch<NewsArticle[]>(`/articles/search?q=${encodeURIComponent(query)}`),
     enabled: !!query,
+  });
+}
+
+export function useArticle(id: number) {
+  return useQuery({
+    queryKey: ["article", id],
+    queryFn: () => apiFetch<ArticleDetail>(`/articles/${id}`),
+    enabled: !!id,
   });
 }
 

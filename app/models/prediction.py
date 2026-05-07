@@ -12,6 +12,7 @@ class Prediction(db.Model):
     )
     direction = db.Column(db.String(10), nullable=False)
     confidence = db.Column(db.Float, nullable=False)
+    magnitude = db.Column(db.Float, nullable=True)
     reasoning = db.Column(db.Text)
     target_date = db.Column(db.DateTime(timezone=True))
     created_at = db.Column(

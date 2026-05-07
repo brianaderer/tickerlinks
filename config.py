@@ -13,5 +13,10 @@ class Config:
 
     WATCHLIST_PATH = os.environ.get("WATCHLIST_PATH", "/app/watchlist.yaml")
 
+    TYPESENSE_HOST = os.environ.get("TYPESENSE_HOST", "typesense")
+    TYPESENSE_PORT = os.environ.get("TYPESENSE_PORT", "8108")
+    TYPESENSE_API_KEY = os.environ.get("TYPESENSE_API_KEY", "stocklynx-typesense-key")
+    TYPESENSE_COLLECTION = "article_chunks"
+
     MARKET_FETCH_PERIOD = "1d"
     MARKET_FETCH_INTERVAL = "1h"

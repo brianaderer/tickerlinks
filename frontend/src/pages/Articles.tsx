@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useArticles, useSentiment } from "../api/articles";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import AiGenerated from "../components/AiGenerated";
 import EmptyState from "../components/EmptyState";
 import { decodeHtml } from "../utils";
 
@@ -67,9 +66,7 @@ export default function Articles() {
                 <div>
                   <Link to="/articles/$articleId" params={{ articleId: String(a.id) }} className="font-serif text-base font-bold text-stone-900 leading-snug hover:underline cursor-pointer block">{decodeHtml(a.title)}</Link>
                   {a.summary && (
-                    <AiGenerated label="AI summary" className="mt-1">
-                      <p className="font-body text-sm text-stone-600 line-clamp-2">{decodeHtml(a.summary)}</p>
-                    </AiGenerated>
+                    <p className="font-body text-sm text-stone-600 line-clamp-2 mt-1">{decodeHtml(a.summary)}</p>
                   )}
                 </div>
                 {a.companies?.length > 0 && (

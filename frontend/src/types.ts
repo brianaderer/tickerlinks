@@ -89,11 +89,22 @@ export interface SignalWeight {
   snapshots: number;
 }
 
+export interface SignalDigest {
+  symbol: string;
+  direction: string;
+  net_confidence: number;
+  match_count: number;
+  digest: string;
+  matches: string[];
+  generated_at: string;
+}
+
 export interface Prediction {
   id: number;
   company: string;
   direction: string;
   confidence: number;
+  magnitude: number | null;
   reasoning: string;
   target_date: string | null;
   created_at: string;

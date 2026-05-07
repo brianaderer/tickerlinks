@@ -94,7 +94,13 @@ def _process_article(article: NewsArticle):
 
     if not article.full_text:
         article.full_text = _scrape_full_text(article.url)
+    if not article.full_text:
+        article.full_text = _scrape_with_playwright(article.url)
+
     full_text = article.full_text or ""
+    if not full_text:
+        logger.info("Skipping article %d — no full text available: %s", article.id, title[:60])
+        return {}
 
     companies = match_tickers(title, summary)
 
@@ -144,10 +150,39 @@ def _scrape_full_text(url: str) -> Optional[str]:
         else:
             paragraphs = soup.find_all("p")
 
-        text = "\n\n".join(p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 30)
+        text = "\n\n".join(p.get_text(separator=" ", strip=True) for p in paragraphs if len(p.get_text(separator=" ", strip=True)) > 30)
         return text if len(text) > 100 else None
     except Exception:
         logger.debug("Failed to scrape %s", url)
+        return None
+
+
+def _scrape_with_playwright(url: str) -> Optional[str]:
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(url, timeout=10000, wait_until="domcontentloaded")
+            page.wait_for_timeout(2000)
+
+            article_el = (
+                page.query_selector("article")
+                or page.query_selector("div.caas-body")
+                or page.query_selector("div.article-content")
+            )
+            if article_el:
+                text = article_el.inner_text()
+            else:
+                text = page.inner_text("body")
+
+            browser.close()
+
+            lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 30]
+            clean = "\n\n".join(lines)
+            return clean if len(clean) > 100 else None
+    except Exception:
+        logger.debug("Playwright scrape failed for %s", url)
         return None
 
 

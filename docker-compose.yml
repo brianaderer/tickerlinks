@@ -38,8 +38,9 @@ services:
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-Qwen/Qwen3-14B}
       LLM_API_BASE: ${LLM_API_BASE:-https://api.deepinfra.com/v1/openai}
-      CHROMA_HOST: chromadb
-      CHROMA_PORT: "8000"
+      TYPESENSE_HOST: typesense
+      TYPESENSE_PORT: "8108"
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:-stocklynx-typesense-key}
     ports:
       - "5001:5000"
     volumes:
@@ -49,13 +50,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      chromadb:
-        condition: service_started
+      typesense:
+        condition: service_healthy
 
   celery-worker:
     build: .
     env_file: .env
-    command: celery -A celery_worker.celery worker --pool=prefork --concurrency=20 --loglevel=info
+    command: celery -A celery_worker.celery worker --pool=prefork --concurrency=30 --loglevel=info
     environment:
       FLASK_APP: app
       DATABASE_URL: postgresql://stocklynx:stocklynx@db:5432/stocklynx
@@ -64,15 +65,16 @@ services:
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}
       LLM_API_BASE: ${LLM_API_BASE:-https://api.deepinfra.com/v1/openai}
-      CHROMA_HOST: chromadb
-      CHROMA_PORT: "8000"
+      TYPESENSE_HOST: typesense
+      TYPESENSE_PORT: "8108"
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:-stocklynx-typesense-key}
     volumes:
       - .:/app
     depends_on:
       api:
         condition: service_started
-      chromadb:
-        condition: service_started
+      typesense:
+        condition: service_healthy
 
   celery-beat:
     build: .
@@ -88,15 +90,21 @@ services:
       api:
         condition: service_started
 
-  chromadb:
-    image: chromadb/chroma:latest
+  typesense:
+    image: typesense/typesense:27.1
     ports:
-      - "8000:8000"
+      - "8108:8108"
     volumes:
-      - chromadata:/chroma/chroma
+      - typesensedata:/data
     environment:
-      ANONYMIZED_TELEMETRY: "false"
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:-stocklynx-typesense-key}
+      TYPESENSE_DATA_DIR: /data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8108'"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   pgdata:
-  chromadata:
+  typesensedata:
