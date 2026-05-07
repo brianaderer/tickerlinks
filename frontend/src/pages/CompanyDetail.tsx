@@ -1,7 +1,7 @@
 import { useParams, Link } from "@tanstack/react-router";
 import { useCompany, useCompanyPrices } from "../api/companies";
 import { useSignalMatches } from "../api/signals";
-import { usePredictions } from "../api/predictions";
+import { usePredictions, useRunPrediction } from "../api/predictions";
 import { useArticles } from "../api/articles";
 import PriceChart from "../components/PriceChart";
 import PredictionCard from "../components/PredictionCard";
@@ -14,6 +14,7 @@ export default function CompanyDetail() {
   const { data: prices, isLoading: pricesLoading } = useCompanyPrices(symbol!, 5000);
   const { data: matches, isLoading: matchesLoading } = useSignalMatches(symbol);
   const { data: predictions, isLoading: predsLoading } = usePredictions(symbol);
+  const runPrediction = useRunPrediction(symbol!);
   const { data: articles, isLoading: articlesLoading } = useArticles(symbol);
 
   const loading = pricesLoading || matchesLoading || predsLoading || articlesLoading;
@@ -63,15 +64,33 @@ export default function CompanyDetail() {
         </section>
       )}
 
-      {predictions && predictions.length > 0 && (
-        <section>
-          <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Predictions</h3>
-          <div className="h-px bg-stone-900 mb-4" />
+      <section>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-serif text-base font-bold text-stone-900">Predictions</h3>
+          <button
+            onClick={() => runPrediction.mutate()}
+            disabled={runPrediction.isPending}
+            className="flex items-center gap-1.5 px-3 py-1 text-xs font-sans font-semibold border border-stone-300 rounded hover:bg-stone-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {runPrediction.isPending ? (
+              <>
+                <span className="w-3 h-3 border-2 border-stone-300 border-t-stone-700 rounded-full animate-spin" />
+                Running...
+              </>
+            ) : (
+              "Run Prediction"
+            )}
+          </button>
+        </div>
+        <div className="h-px bg-stone-900 mb-4" />
+        {predictions && predictions.length > 0 ? (
           <div className="space-y-4">
             {predictions.map((p) => <PredictionCard key={p.id} prediction={p} />)}
           </div>
-        </section>
-      )}
+        ) : (
+          <p className="text-sm font-sans text-stone-400 italic">No recent predictions. Click "Run Prediction" to analyze this company.</p>
+        )}
+      </section>
 
       {matches && matches.length > 0 && (
         <section>

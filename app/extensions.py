@@ -20,6 +20,7 @@ def celery_init_app(app):
     celery.conf.task_routes = {
         "app.tasks.maintenance.*": {"queue": "backfill"},
         "app.tasks.chat.*": {"queue": "user"},
+        "app.tasks.analyze.run_company_prediction": {"queue": "user"},
     }
     celery.conf.beat_schedule = {
         "fetch-market-data": {

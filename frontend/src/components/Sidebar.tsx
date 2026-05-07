@@ -7,7 +7,6 @@ import {
   HiOutlineChartBar,
   HiOutlineNewspaper,
   HiOutlineDocumentText,
-  HiOutlineChatBubbleLeftRight,
 } from "react-icons/hi2";
 
 const NAV = [
@@ -21,8 +20,6 @@ const NAV = [
 
 export default function Sidebar() {
   const open = useAppStore((s) => s.sidebarOpen);
-  const toggleChat = useAppStore((s) => s.toggleChat);
-  const chatOpen = useAppStore((s) => s.chatOpen);
   const location = useLocation();
 
   return (
@@ -54,20 +51,7 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Linky chat toggle pinned to bottom */}
-      <div className="px-2 pb-4 border-t border-stone-200 pt-3">
-        <button
-          onClick={toggleChat}
-          className={`flex items-center gap-3 px-3 py-2 rounded text-sm font-sans transition-colors w-full ${
-            chatOpen
-              ? "bg-stone-900 text-stone-50 font-medium"
-              : "text-stone-600 hover:bg-stone-200 hover:text-stone-900"
-          }`}
-        >
-          <HiOutlineChatBubbleLeftRight className="w-5 h-5 shrink-0" />
-          {open && <span className="font-serif font-bold">Linky</span>}
-        </button>
-      </div>
+
     </aside>
   );
 }

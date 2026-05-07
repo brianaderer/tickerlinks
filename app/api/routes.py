@@ -263,9 +263,11 @@ def list_signal_matches():
 
 @bp.route("/predictions")
 def list_predictions():
+    from datetime import datetime, timedelta, timezone
     limit = request.args.get("limit", 50, type=int)
     company_filter = request.args.get("company")
     direction_filter = request.args.get("direction")
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
 
     from sqlalchemy import func
     latest_subq = (
@@ -281,7 +283,7 @@ def list_predictions():
         latest_subq,
         (Prediction.company_id == latest_subq.c.company_id)
         & (Prediction.created_at == latest_subq.c.max_created),
-    ).order_by(Prediction.created_at.desc())
+    ).filter(Prediction.created_at >= cutoff).order_by(Prediction.created_at.desc())
 
     if company_filter:
         company = Company.query.filter_by(
@@ -309,6 +311,14 @@ def list_predictions():
             if len(p.signal_matches) > 0
         ]
     )
+
+
+@bp.route("/predictions/<symbol>/run", methods=["POST"])
+def run_prediction(symbol):
+    company = Company.query.filter_by(symbol=symbol.upper()).first_or_404()
+    from app.tasks.analyze import run_company_prediction
+    run_company_prediction.delay(company.id)
+    return jsonify({"status": "queued", "symbol": company.symbol}), 202
 
 
 @bp.route("/articles/search/text")

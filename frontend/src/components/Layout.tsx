@@ -3,7 +3,7 @@ import { Outlet, useRouterState } from "@tanstack/react-router";
 import Sidebar from "./Sidebar";
 import ChatDrawer from "./ChatDrawer";
 import { useAppStore } from "../store";
-import { HiOutlineBars3 } from "react-icons/hi2";
+import { HiOutlineBars3, HiOutlineChatBubbleLeftRight } from "react-icons/hi2";
 import { useSSE } from "../api/sse";
 
 export default function Layout() {
@@ -16,6 +16,8 @@ export default function Layout() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const sseConnected = useAppStore((s) => s.sseConnected);
+  const toggleChat = useAppStore((s) => s.toggleChat);
+  const chatOpen = useAppStore((s) => s.chatOpen);
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -50,6 +52,16 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+      {/* Floating Linky button */}
+      {!chatOpen && (
+        <button
+          onClick={toggleChat}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 bg-stone-900 text-stone-50 pl-4 pr-5 py-3 rounded-full shadow-lg hover:bg-stone-800 transition-colors"
+        >
+          <HiOutlineChatBubbleLeftRight className="w-5 h-5" />
+          <span className="font-serif font-bold text-sm">Linky</span>
+        </button>
+      )}
       <ChatDrawer />
     </div>
   );

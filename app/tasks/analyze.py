@@ -42,3 +42,22 @@ def run_signal_analysis(company_ids: list[int] | None = None):
         r.setex("last_predict_at", PREDICT_COOLDOWN, "1")
 
     return result
+
+
+@celery.task(name="app.tasks.analyze.run_company_prediction")
+def run_company_prediction(company_id: int):
+    from app.models import Company
+    company = Company.query.get(company_id)
+    symbol = company.symbol if company else f"id={company_id}"
+    logger.info("Running manual prediction for %s", symbol)
+    sse_publish("signals", "analysis_started", {"mode": "manual", "symbol": symbol})
+
+    result = run_analysis(company_ids=[company_id], skip_predict=False)
+    logger.info("Manual prediction complete for %s: %s", symbol, result)
+
+    sse_publish("signals", "analysis_complete", {
+        "mode": "manual",
+        "symbol": symbol,
+        "predictions": result.get("strong_predictions", 0) if isinstance(result, dict) else 0,
+    })
+    return result
