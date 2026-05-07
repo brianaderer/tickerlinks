@@ -126,7 +126,7 @@ def list_articles():
     from sqlalchemy import func
     sort_col = func.coalesce(NewsArticle.published_at, NewsArticle.fetched_at)
     query = NewsArticle.query.filter(
-        NewsArticle.content_source != None
+        NewsArticle.content_source == "scraped"
     ).order_by(sort_col.desc())
     if company_filter:
         company = Company.query.filter_by(
