@@ -46,16 +46,28 @@ def run_signal_analysis(company_ids: list[int] | None = None):
 
 @celery.task(name="app.tasks.analyze.run_company_prediction")
 def run_company_prediction(company_id: int):
-    from app.models import Company, Prediction
+    from datetime import datetime, timedelta, timezone
+    from app.models import Company, Prediction, SignalMatch
+    from app.signals.nodes.gather import gather_node
+    from app.signals.nodes.aggregate import aggregate_node
+    from app.signals.nodes.predict import predict_node
+    from app.signals.nodes.evaluate import evaluate_node
+    from app.signals.nodes.output import output_node
+    from app.signals.nodes.digest import digest_node
+
     company = Company.query.get(company_id)
     symbol = company.symbol if company else f"id={company_id}"
     logger.info("Running manual prediction for %s", symbol)
     sse_publish("signals", "analysis_started", {"mode": "manual", "symbol": symbol})
 
-    from app.models import SignalMatch
-    recent_signals = SignalMatch.query.filter_by(company_id=company_id).count()
-    if recent_signals == 0:
-        logger.info("No signals for %s, skipping prediction", symbol)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    matches = SignalMatch.query.filter(
+        SignalMatch.company_id == company_id,
+        SignalMatch.detected_at >= cutoff,
+    ).all()
+
+    if not matches:
+        logger.info("No recent signals for %s, skipping prediction", symbol)
         sse_publish("signals", "analysis_complete", {
             "mode": "manual",
             "symbol": symbol,
@@ -64,8 +76,40 @@ def run_company_prediction(company_id: int):
         })
         return {"total_signals": 0, "skipped": True}
 
-    result = run_analysis(company_ids=[company_id], skip_predict=False)
-    logger.info("Manual prediction complete for %s: %s", symbol, result)
+    signals = [
+        {
+            "signal_name": m.signal.name,
+            "signal_type": m.signal.signal_type,
+            "company_id": m.company_id,
+            "symbol": symbol,
+            "direction": m.direction,
+            "confidence": float(m.confidence),
+            "context": m.context or {},
+        }
+        for m in matches
+    ]
+
+    state = {
+        "company_ids": [company_id],
+        "price_data": {},
+        "news_data": {},
+        "fundamentals_data": {},
+        "insider_data": {},
+        "signals": signals,
+        "predictions": [],
+        "iteration": 0,
+        "max_iterations": 1,
+        "confidence_threshold": 0.0,
+    }
+
+    state = gather_node(state)
+    state = aggregate_node(state)
+    state = predict_node(state)
+    state = evaluate_node(state)
+    state = output_node(state)
+    state = digest_node(state)
+
+    logger.info("Manual prediction complete for %s", symbol)
 
     prediction_data = None
     pred = Prediction.query.filter_by(company_id=company_id).order_by(
@@ -89,4 +133,8 @@ def run_company_prediction(company_id: int):
         "symbol": symbol,
         "prediction": prediction_data,
     })
-    return result
+    return {
+        "total_signals": len(signals),
+        "strong_predictions": len(state.get("strong_predictions", [])),
+        "mode": "manual",
+    }
