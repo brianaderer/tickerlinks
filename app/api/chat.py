@@ -70,8 +70,8 @@ def chat():
         elif role == "assistant":
             # Truncate older assistant messages to avoid the model parroting them
             is_last = i == len(history) - 1
-            if not is_last and len(content) > 500:
-                content = content[:500] + "\n[truncated]"
+            if not is_last and len(content) > 4000:
+                content = content[:4000] + "\n[truncated]"
             lc_messages.append(AIMessage(content=content))
 
     try:

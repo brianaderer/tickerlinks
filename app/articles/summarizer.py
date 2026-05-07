@@ -63,7 +63,7 @@ def summarize_article(title: str, summary: str = "", full_text: str = "") -> dic
     if not llm:
         return {"summary": "", "topics": []}
 
-    body = full_text[:2000] if full_text else summary[:1000]
+    body = full_text[:4000] if full_text else summary[:4000]
 
     user_msg = f"""Title: {title}
 
