@@ -16,7 +16,8 @@ def output_node(state: EngineState) -> EngineState:
     predictions = state.get("strong_predictions", []) + state.get("weak_predictions", [])
     run_id = uuid4().hex
 
-    _persist_signals(raw_signals, run_id)
+    has_predictions = len(predictions) > 0
+    _persist_signals(raw_signals, run_id, has_predictions=has_predictions)
     _persist_predictions(predictions, run_id)
 
     logger.info(
@@ -26,17 +27,23 @@ def output_node(state: EngineState) -> EngineState:
     return state
 
 
-def _persist_signals(raw_signals: list[dict], run_id: str):
+def _persist_signals(raw_signals: list[dict], run_id: str, has_predictions: bool = True):
     now = datetime.now(timezone.utc)
 
     # Delete old signal matches for companies in this run
     company_ids = list({s["company_id"] for s in raw_signals})
     if company_ids:
-        # Clear join table references first
-        old_match_ids = [
-            m.id for m in
-            SignalMatch.query.filter(SignalMatch.company_id.in_(company_ids)).all()
-        ]
+        old_query = SignalMatch.query.filter(SignalMatch.company_id.in_(company_ids))
+        if not has_predictions:
+            # Signals-only run: only delete matches NOT linked to predictions
+            linked_ids = {
+                row[0] for row in
+                db.session.execute(prediction_match.select()).fetchall()
+            }
+            old_match_ids = [m.id for m in old_query.all() if m.id not in linked_ids]
+        else:
+            old_match_ids = [m.id for m in old_query.all()]
+
         if old_match_ids:
             db.session.execute(
                 prediction_match.delete().where(
