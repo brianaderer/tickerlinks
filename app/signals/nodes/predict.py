@@ -166,7 +166,7 @@ def predict_node(state: EngineState) -> EngineState:
                 )),
             ]
 
-            for _ in range(4):
+            for _ in range(2):
                 response = llm_with_tools.invoke(messages)
                 if not response.tool_calls:
                     break

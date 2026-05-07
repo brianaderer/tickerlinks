@@ -58,12 +58,13 @@ class PatternDetector(SignalDetector):
         for sig in existing_signals:
             cid = sig.get("company_id")
             if cid not in companies:
-                companies[cid] = {"symbol": sig.get("symbol", "?"), "signals": []}
+                companies[cid] = {"symbol": sig.get("symbol", "?"), "signals": [], "types": set()}
             companies[cid]["signals"].append(sig)
+            companies[cid]["types"].add(sig.get("signal_type", ""))
 
         results = []
         for company_id, info in companies.items():
-            if len(info["signals"]) < 2:
+            if len(info["types"]) < 2:
                 continue
             try:
                 signal = self._analyze_pattern(
