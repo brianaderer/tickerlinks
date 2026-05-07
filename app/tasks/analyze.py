@@ -46,7 +46,7 @@ def run_signal_analysis(company_ids: list[int] | None = None):
 
 @celery.task(name="app.tasks.analyze.run_company_prediction")
 def run_company_prediction(company_id: int):
-    from app.models import Company
+    from app.models import Company, Prediction
     company = Company.query.get(company_id)
     symbol = company.symbol if company else f"id={company_id}"
     logger.info("Running manual prediction for %s", symbol)
