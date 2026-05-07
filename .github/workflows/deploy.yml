@@ -1,0 +1,23 @@
+name: Deploy to brianserver
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env file
+        run: |
+          cat > .env << 'EOF'
+          DEEPINFRA_API_KEY=${{ secrets.DEEPINFRA_API_KEY }}
+          LLM_MODEL=Qwen/Qwen3-14B
+          LLM_API_BASE=https://api.deepinfra.com/v1/openai
+          TYPESENSE_API_KEY=stocklynx-typesense-key
+          EOF
+
+      - name: Deploy with Docker Compose
+        run: docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
