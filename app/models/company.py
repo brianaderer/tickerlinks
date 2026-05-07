@@ -21,7 +21,6 @@ class Company(db.Model):
     )
 
     prices = db.relationship("PriceHistory", backref="company", lazy="dynamic")
-    articles = db.relationship("NewsArticle", backref="company", lazy="dynamic")
     indexes = db.relationship(
         "Index", secondary=company_index, back_populates="companies"
     )

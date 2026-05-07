@@ -34,14 +34,26 @@ export interface FeedSource {
   last_polled: string | null;
 }
 
+export interface ArticleCompany {
+  symbol: string;
+  sentiment: string;
+  relevance: string;
+}
+
 export interface NewsArticle {
   id: number;
   title: string;
   summary: string | null;
   url: string;
   source_name: string;
-  company: string | null;
+  companies: ArticleCompany[];
   published_at: string | null;
+}
+
+export interface ArticleDetail extends NewsArticle {
+  full_text: string | null;
+  author: string | null;
+  fetched_at: string | null;
 }
 
 export interface Signal {
@@ -90,8 +102,12 @@ export interface Prediction {
 
 export interface SentimentResult {
   symbol: string;
-  sentiment: number;
-  article_count: number;
+  sentiment_score: number;
+  total_mentions: number;
+  bullish: number;
+  bearish: number;
+  neutral: number;
+  primary_mentions: number;
 }
 
 export interface Report {

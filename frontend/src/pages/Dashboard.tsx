@@ -6,6 +6,7 @@ import { useArticles, useSentiment } from "../api/articles";
 import SignalBadge from "../components/SignalBadge";
 import AiGenerated from "../components/AiGenerated";
 import EmptyState from "../components/EmptyState";
+import { decodeHtml } from "../utils";
 
 export default function Dashboard() {
   const { data: report } = useLatestReport();
@@ -151,7 +152,7 @@ export default function Dashboard() {
                     <Link
                       to="/companies/$symbol"
                       params={{ symbol: m.company }}
-                      className="font-serif font-bold text-stone-900 hover:underline"
+                      className="font-serif font-bold text-stone-900 hover:underline cursor-pointer"
                     >
                       {m.company}
                     </Link>
@@ -168,6 +169,7 @@ export default function Dashboard() {
         {/* Col 2: Sentiment Desk */}
         <div className="lg:px-6 lg:border-r border-stone-300 mt-6 lg:mt-0">
           <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Sentiment Desk</h3>
+          <p className="text-[10px] font-sans text-stone-400 mb-1">7-day rolling &middot; primacy weighted</p>
           <div className="h-px bg-stone-900 mb-4" />
           {(!sentiment || sentiment.length === 0) ? (
             <EmptyState message="No sentiment data yet. Scores appear once articles are fetched and analyzed." />
@@ -179,21 +181,21 @@ export default function Dashboard() {
                   <Link
                     to="/companies/$symbol"
                     params={{ symbol: s.symbol }}
-                    className="font-serif font-bold text-stone-900 hover:underline"
+                    className="font-serif font-bold text-stone-900 hover:underline cursor-pointer"
                   >
                     {s.symbol}
                   </Link>
-                  <span className={`font-sans text-sm font-semibold tabular-nums ${s.sentiment >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                    {s.sentiment >= 0 ? "+" : ""}{s.sentiment.toFixed(2)}
+                  <span className={`font-sans text-sm font-semibold tabular-nums ${s.sentiment_score >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                    {s.sentiment_score >= 0 ? "+" : ""}{s.sentiment_score.toFixed(2)}
                   </span>
                 </div>
                 <div className="h-1 bg-stone-100 rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${s.sentiment >= 0 ? "bg-emerald-600" : "bg-red-600"}`}
-                    style={{ width: `${Math.abs(s.sentiment) * 100}%` }}
+                    className={`h-full rounded-full ${s.sentiment_score >= 0 ? "bg-emerald-600" : "bg-red-600"}`}
+                    style={{ width: `${Math.abs(s.sentiment_score) * 100}%` }}
                   />
                 </div>
-                <span className="text-xs text-stone-400 font-sans mt-1 block">{s.article_count} articles</span>
+                <span className="text-xs text-stone-400 font-sans mt-1 block">{s.total_mentions} mentions</span>
               </div>
               ))}
             </div>
@@ -231,22 +233,23 @@ export default function Dashboard() {
             <div className="space-y-4">
               {articles.slice(0, 6).map((a) => (
               <div key={a.id} className="border-b border-stone-200 pb-3">
-                <p className="font-serif text-sm font-bold text-stone-900 leading-snug">{a.title}</p>
+                <Link to="/articles/$articleId" params={{ articleId: String(a.id) }} className="font-serif text-sm font-bold text-stone-900 leading-snug hover:underline cursor-pointer block">{decodeHtml(a.title)}</Link>
                 {a.summary && (
                   <AiGenerated label="AI summary" className="mt-1">
-                    <p className="font-body text-xs text-stone-500 line-clamp-2">{a.summary}</p>
+                    <p className="font-body text-xs text-stone-500 line-clamp-2">{decodeHtml(a.summary)}</p>
                   </AiGenerated>
                 )}
                 <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans">
-                  {a.company && (
+                  {a.companies?.map((c) => (
                     <Link
+                      key={c.symbol}
                       to="/companies/$symbol"
-                      params={{ symbol: a.company }}
-                      className="font-semibold text-stone-700 hover:underline"
+                      params={{ symbol: c.symbol }}
+                      className="font-semibold text-stone-700 hover:underline cursor-pointer"
                     >
-                      {a.company}
+                      {c.symbol}
                     </Link>
-                  )}
+                  ))}
                   <span>{a.source_name}</span>
                   {a.published_at && <span>{new Date(a.published_at).toLocaleTimeString()}</span>}
                 </div>

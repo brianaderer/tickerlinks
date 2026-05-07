@@ -4,6 +4,7 @@ import { useArticles, useSentiment } from "../api/articles";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import AiGenerated from "../components/AiGenerated";
 import EmptyState from "../components/EmptyState";
+import { decodeHtml } from "../utils";
 
 export default function Articles() {
   const [search, setSearch] = useState("");
@@ -42,9 +43,9 @@ export default function Articles() {
                 <XAxis dataKey="symbol" tick={{ fill: "#78716c", fontSize: 12, fontFamily: "Inter" }} tickLine={false} axisLine={false} />
                 <YAxis tick={{ fill: "#78716c", fontSize: 11, fontFamily: "Inter" }} tickLine={false} axisLine={false} domain={[-1, 1]} />
                 <Tooltip contentStyle={{ backgroundColor: "#fafaf9", border: "1px solid #d6d3d1", borderRadius: 4, fontSize: 12, fontFamily: "Inter" }} />
-                <Bar dataKey="sentiment" radius={[2, 2, 0, 0]}>
+                <Bar dataKey="sentiment_score" radius={[2, 2, 0, 0]}>
                   {sentiment.map((s, i) => (
-                    <Cell key={i} fill={s.sentiment >= 0 ? "#059669" : "#dc2626"} />
+                    <Cell key={i} fill={s.sentiment_score >= 0 ? "#059669" : "#dc2626"} />
                   ))}
                 </Bar>
               </BarChart>
@@ -64,21 +65,30 @@ export default function Articles() {
             <div key={a.id} className="border-b border-stone-200 pb-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="font-serif text-base font-bold text-stone-900 leading-snug">{a.title}</p>
+                  <Link to="/articles/$articleId" params={{ articleId: String(a.id) }} className="font-serif text-base font-bold text-stone-900 leading-snug hover:underline cursor-pointer block">{decodeHtml(a.title)}</Link>
                   {a.summary && (
                     <AiGenerated label="AI summary" className="mt-1">
-                      <p className="font-body text-sm text-stone-600 line-clamp-2">{a.summary}</p>
+                      <p className="font-body text-sm text-stone-600 line-clamp-2">{decodeHtml(a.summary)}</p>
                     </AiGenerated>
                   )}
                 </div>
-                {a.company && (
-                  <Link
-                    to="/companies/$symbol"
-                    params={{ symbol: a.company }}
-                    className="shrink-0 font-serif font-bold text-sm text-stone-900 hover:underline"
-                  >
-                    {a.company}
-                  </Link>
+                {a.companies?.length > 0 && (
+                  <div className="flex gap-1.5 shrink-0 flex-wrap">
+                    {a.companies.map((c) => (
+                      <Link
+                        key={c.symbol}
+                        to="/companies/$symbol"
+                        params={{ symbol: c.symbol }}
+                        className={`font-serif font-bold text-xs px-1.5 py-0.5 rounded hover:underline cursor-pointer ${
+                          c.sentiment === "bullish" ? "bg-emerald-50 text-emerald-800" :
+                          c.sentiment === "bearish" ? "bg-red-50 text-red-800" :
+                          "bg-stone-100 text-stone-700"
+                        }`}
+                      >
+                        {c.symbol}
+                      </Link>
+                    ))}
+                  </div>
                 )}
               </div>
               <div className="flex gap-3 mt-2 text-xs text-stone-400 font-sans">

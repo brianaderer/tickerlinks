@@ -1,9 +1,11 @@
 from flask import jsonify, request
 
 from app.api import bp
+from app.extensions import db
 from app.models import (
     Company, PriceHistory, FeedSource, NewsArticle, Index,
-    Signal, SignalMatch, Prediction, Report,
+    Signal, SignalMatch, Prediction, Report, SignalDigest,
+    article_companies,
 )
 from app.articles.processor import search_articles, get_sentiment_index
 from app.articles.indices import all_indices
@@ -100,6 +102,22 @@ def list_feeds():
     )
 
 
+def _article_companies(article_id: int) -> list[dict]:
+    rows = db.session.execute(
+        article_companies.select().where(article_companies.c.article_id == article_id)
+    ).fetchall()
+    result = []
+    for r in rows:
+        comp = Company.query.get(r.company_id)
+        if comp:
+            result.append({
+                "symbol": comp.symbol,
+                "sentiment": r.sentiment,
+                "relevance": r.relevance,
+            })
+    return result
+
+
 @bp.route("/articles")
 def list_articles():
     limit = request.args.get("limit", 50, type=int)
@@ -110,7 +128,10 @@ def list_articles():
         company = Company.query.filter_by(
             symbol=company_filter.upper()
         ).first_or_404()
-        query = query.filter_by(company_id=company.id)
+        query = query.filter(
+            NewsArticle.id == article_companies.c.article_id,
+            article_companies.c.company_id == company.id,
+        )
 
     articles = query.limit(limit).all()
     return jsonify(
@@ -121,7 +142,7 @@ def list_articles():
                 "summary": a.summary[:200] if a.summary else None,
                 "url": a.url,
                 "source_name": a.source_name,
-                "company": a.company.symbol if a.company else None,
+                "companies": _article_companies(a.id),
                 "published_at": a.published_at.isoformat()
                 if a.published_at
                 else None,
@@ -129,6 +150,23 @@ def list_articles():
             for a in articles
         ]
     )
+
+
+@bp.route("/articles/<int:article_id>")
+def get_article(article_id):
+    a = NewsArticle.query.get_or_404(article_id)
+    return jsonify({
+        "id": a.id,
+        "title": a.title,
+        "summary": a.summary,
+        "full_text": a.full_text,
+        "url": a.url,
+        "author": a.author,
+        "source_name": a.source_name,
+        "companies": _article_companies(a.id),
+        "published_at": a.published_at.isoformat() if a.published_at else None,
+        "fetched_at": a.fetched_at.isoformat() if a.fetched_at else None,
+    })
 
 
 @bp.route("/signals")
@@ -267,6 +305,28 @@ def signal_weights():
             "snapshots": len(s.accuracy_snapshots or []),
         }
         for s in signals
+    ])
+
+
+@bp.route("/signals/digests")
+def signal_digests():
+    from sqlalchemy import func
+    latest_time = db.session.query(func.max(SignalDigest.generated_at)).scalar()
+    if not latest_time:
+        return jsonify([])
+
+    digests = SignalDigest.query.filter_by(generated_at=latest_time).all()
+    return jsonify([
+        {
+            "symbol": d.company.symbol,
+            "direction": d.direction,
+            "net_confidence": d.net_confidence,
+            "match_count": d.match_count,
+            "digest": d.digest,
+            "matches": d.matches,
+            "generated_at": d.generated_at.isoformat(),
+        }
+        for d in digests
     ])
 
 

@@ -53,9 +53,13 @@ def gather_node(state: EngineState) -> EngineState:
             df.set_index("timestamp", inplace=True)
             price_data[cid] = {"symbol": company.symbol, "df": df}
 
+        from app.models.article import article_companies
         articles = (
-            NewsArticle.query.filter(
-                NewsArticle.company_id == cid,
+            NewsArticle.query.join(
+                article_companies,
+                NewsArticle.id == article_companies.c.article_id,
+            ).filter(
+                article_companies.c.company_id == cid,
                 NewsArticle.published_at >= news_cutoff,
             )
             .order_by(NewsArticle.published_at.desc())

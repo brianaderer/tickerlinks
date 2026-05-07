@@ -2,16 +2,19 @@ from app.extensions import db
 from datetime import datetime, timezone
 
 
+article_companies = db.Table(
+    "article_companies",
+    db.Column("article_id", db.Integer, db.ForeignKey("news_articles.id"), primary_key=True),
+    db.Column("company_id", db.Integer, db.ForeignKey("companies.id"), primary_key=True),
+    db.Column("sentiment", db.String(10)),
+    db.Column("relevance", db.String(10)),
+)
+
+
 class NewsArticle(db.Model):
     __tablename__ = "news_articles"
-    __table_args__ = (
-        db.Index("ix_article_company_pub", "company_id", "published_at"),
-    )
 
     id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(
-        db.Integer, db.ForeignKey("companies.id"), nullable=True, index=True
-    )
     feed_source_id = db.Column(
         db.Integer, db.ForeignKey("feed_sources.id"), nullable=False, index=True
     )
@@ -28,6 +31,8 @@ class NewsArticle(db.Model):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+    companies = db.relationship("Company", secondary=article_companies, backref="articles")
 
     def __repr__(self):
         return f"<Article {self.title[:50]}>"

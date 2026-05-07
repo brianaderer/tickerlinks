@@ -3,20 +3,42 @@ import os
 import re
 from typing import Optional
 
-import chromadb
 import requests
+import typesense
 from bs4 import BeautifulSoup
 from sentence_transformers import SentenceTransformer
 
 from app.extensions import db
-from app.models import NewsArticle
+from app.models import NewsArticle, Company
+from app.models.article import article_companies
 from app.articles.ticker_matcher import match_tickers
 from app.articles.summarizer import summarize_article
 
 logger = logging.getLogger(__name__)
 
 _embedding_model = None
-_chroma_collection = None
+_typesense_client = None
+
+COLLECTION_NAME = "article_chunks"
+
+COLLECTION_SCHEMA = {
+    "name": COLLECTION_NAME,
+    "fields": [
+        {"name": "article_id", "type": "int32"},
+        {"name": "chunk_index", "type": "int32"},
+        {"name": "title", "type": "string", "optional": True},
+        {"name": "document", "type": "string"},
+        {"name": "companies", "type": "string[]", "optional": True, "facet": True},
+        {"name": "company_sentiments", "type": "string", "optional": True},
+        {"name": "company_relevances", "type": "string", "optional": True},
+        {"name": "article_summary", "type": "string", "optional": True},
+        {"name": "topic_threads", "type": "string", "optional": True},
+        {"name": "source_name", "type": "string", "optional": True, "facet": True},
+        {"name": "published_at_ts", "type": "int64", "optional": True, "sort": True},
+        {"name": "published_at", "type": "string", "optional": True},
+        {"name": "embedding", "type": "float[]", "num_dim": 384},
+    ],
+}
 
 
 def get_embedding_model():
@@ -26,17 +48,27 @@ def get_embedding_model():
     return _embedding_model
 
 
-def get_chroma_collection():
-    global _chroma_collection
-    if _chroma_collection is None:
-        host = os.environ.get("CHROMA_HOST", "chromadb")
-        port = int(os.environ.get("CHROMA_PORT", "8000"))
-        client = chromadb.HttpClient(host=host, port=port)
-        _chroma_collection = client.get_or_create_collection(
-            name="article_chunks",
-            metadata={"hnsw:space": "cosine"},
-        )
-    return _chroma_collection
+def get_typesense_client():
+    global _typesense_client
+    if _typesense_client is None:
+        host = os.environ.get("TYPESENSE_HOST", "typesense")
+        port = os.environ.get("TYPESENSE_PORT", "8108")
+        api_key = os.environ.get("TYPESENSE_API_KEY", "stocklynx-typesense-key")
+        _typesense_client = typesense.Client({
+            "nodes": [{"host": host, "port": port, "protocol": "http"}],
+            "api_key": api_key,
+            "connection_timeout_seconds": 10,
+        })
+    return _typesense_client
+
+
+def ensure_collection():
+    client = get_typesense_client()
+    try:
+        client.collections[COLLECTION_NAME].retrieve()
+    except typesense.exceptions.ObjectNotFound:
+        client.collections.create(COLLECTION_SCHEMA)
+        logger.info("Created Typesense collection '%s'", COLLECTION_NAME)
 
 
 def process_single_article(article_id: int) -> dict:
@@ -47,10 +79,10 @@ def process_single_article(article_id: int) -> dict:
         return {"skipped": True, "article_id": article_id}
 
     try:
-        _process_article(article)
+        companies = _process_article(article)
         article.processed = True
         db.session.commit()
-        return {"processed": True, "article_id": article_id}
+        return {"processed": True, "article_id": article_id, "companies": companies}
     except Exception:
         logger.exception("Failed to process article %d: %s", article.id, article.title[:60])
         return {"error": str(article_id)}
@@ -66,6 +98,18 @@ def _process_article(article: NewsArticle):
 
     companies = match_tickers(title, summary)
 
+    db.session.execute(article_companies.delete().where(
+        article_companies.c.article_id == article.id))
+    for sym, meta in companies.items():
+        comp = Company.query.filter_by(symbol=sym).first()
+        if comp:
+            db.session.execute(article_companies.insert().values(
+                article_id=article.id,
+                company_id=comp.id,
+                sentiment=meta.get("sentiment", "neutral"),
+                relevance=meta.get("relevance", "secondary"),
+            ))
+
     summary_result = summarize_article(title, summary, full_text)
 
     tags = {
@@ -76,15 +120,16 @@ def _process_article(article: NewsArticle):
 
     chunks = _chunk_text(article)
     if not chunks:
-        return
+        return companies
 
     _embed_and_store(article, chunks, tags)
+    return companies
 
 
 def _scrape_full_text(url: str) -> Optional[str]:
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        resp = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
+        resp = requests.get(url, headers=headers, timeout=5, allow_redirects=True)
         if resp.status_code != 200:
             return None
 
@@ -121,18 +166,13 @@ def _chunk_text(article: NewsArticle) -> list[str]:
 
 def _embed_and_store(article: NewsArticle, chunks: list[str], tags: dict):
     model = get_embedding_model()
-    collection = get_chroma_collection()
+    client = get_typesense_client()
+    ensure_collection()
 
     embeddings = model.encode(chunks).tolist()
 
-    ids = [f"article_{article.id}_chunk_{i}" for i in range(len(chunks))]
-
-    existing = collection.get(ids=ids)
-    if existing and existing["ids"]:
-        collection.delete(ids=existing["ids"])
-
     companies = tags.get("companies", {})
-    company_tickers = ",".join(companies.keys()) if companies else ""
+    company_tickers = list(companies.keys()) if companies else []
     company_sentiments = ",".join(
         f"{sym}:{info.get('sentiment', 'neutral')}" for sym, info in companies.items()
     ) if companies else ""
@@ -140,104 +180,136 @@ def _embed_and_store(article: NewsArticle, chunks: list[str], tags: dict):
         f"{sym}:{info.get('relevance', 'primary')}" for sym, info in companies.items()
     ) if companies else ""
 
-    metadatas = [
-        {
+    for i, chunk in enumerate(chunks):
+        doc_id = f"article_{article.id}_chunk_{i}"
+        doc = {
+            "id": doc_id,
             "article_id": article.id,
             "chunk_index": i,
             "title": (article.title or "")[:200],
+            "document": chunk,
             "companies": company_tickers,
             "company_sentiments": company_sentiments,
             "company_relevances": company_relevances,
             "article_summary": tags.get("article_summary", ""),
             "topic_threads": " || ".join(tags.get("topic_threads", [])),
             "source_name": article.source_name or "",
+            "published_at_ts": int(article.published_at.timestamp()) if article.published_at else 0,
             "published_at": article.published_at.isoformat() if article.published_at else "",
+            "embedding": embeddings[i],
         }
-        for i in range(len(chunks))
-    ]
-
-    collection.add(
-        ids=ids,
-        embeddings=embeddings,
-        documents=chunks,
-        metadatas=metadatas,
-    )
+        client.collections[COLLECTION_NAME].documents.upsert(doc)
 
     logger.debug("Stored %d chunks for article %d", len(chunks), article.id)
 
 
-def get_sentiment_index(symbol: str = None, limit: int = 50) -> list[dict]:
-    collection = get_chroma_collection()
+SENTIMENT_WINDOW_DAYS = 7
+SENTIMENT_DECAY_LAMBDA = 0.3
 
-    all_docs = collection.get(
-        include=["metadatas"],
-        limit=10000,
-    )
+
+def get_sentiment_index(symbol: str = None, limit: int = 50) -> list[dict]:
+    import math
+    from datetime import datetime, timedelta, timezone
+
+    client = get_typesense_client()
+    ensure_collection()
+
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=SENTIMENT_WINDOW_DAYS)
+    cutoff_ts = int(cutoff.timestamp())
+
+    search_params = {
+        "q": "*",
+        "filter_by": f"chunk_index:0 && published_at_ts:>={cutoff_ts}",
+        "per_page": 250,
+        "page": 1,
+        "include_fields": "article_id,company_sentiments,company_relevances,published_at_ts",
+    }
 
     company_stats = {}
     seen_articles = {}
 
-    for meta in all_docs["metadatas"]:
-        article_id = meta.get("article_id")
-        chunk_index = meta.get("chunk_index", 0)
-        if chunk_index != 0:
-            continue
+    while True:
+        results = client.collections[COLLECTION_NAME].documents.search(search_params)
+        hits = results.get("hits", [])
+        if not hits:
+            break
 
-        sentiments_str = meta.get("company_sentiments", "")
-        relevances_str = meta.get("company_relevances", "")
-        published = meta.get("published_at", "")
+        for hit in hits:
+            meta = hit["document"]
+            article_id = meta.get("article_id")
+            sentiments_str = meta.get("company_sentiments", "")
+            pub_ts = meta.get("published_at_ts", 0)
 
-        if not sentiments_str:
-            continue
-
-        sentiments = {}
-        for pair in sentiments_str.split(","):
-            if ":" in pair:
-                sym, sent = pair.split(":", 1)
-                sentiments[sym.strip()] = sent.strip()
-
-        relevances = {}
-        for pair in relevances_str.split(","):
-            if ":" in pair:
-                sym, rel = pair.split(":", 1)
-                relevances[sym.strip()] = rel.strip()
-
-        for sym, sentiment in sentiments.items():
-            if symbol and sym.upper() != symbol.upper():
+            if not sentiments_str:
                 continue
 
-            article_key = f"{article_id}_{sym}"
-            if article_key in seen_articles:
-                continue
-            seen_articles[article_key] = True
+            age_days = (now.timestamp() - pub_ts) / 86400 if pub_ts else SENTIMENT_WINDOW_DAYS
+            weight = math.exp(-SENTIMENT_DECAY_LAMBDA * age_days)
 
-            if sym not in company_stats:
-                company_stats[sym] = {
-                    "symbol": sym,
-                    "total_mentions": 0,
-                    "primary_mentions": 0,
-                    "bullish": 0,
-                    "bearish": 0,
-                    "neutral": 0,
-                    "sentiment_score": 0.0,
-                }
+            sentiments = {}
+            for pair in sentiments_str.split(","):
+                if ":" in pair:
+                    sym, sent = pair.split(":", 1)
+                    sentiments[sym.strip()] = sent.strip()
 
-            stats = company_stats[sym]
-            stats["total_mentions"] += 1
-            if relevances.get(sym) == "primary":
-                stats["primary_mentions"] += 1
+            relevances_str = meta.get("company_relevances", "")
+            relevances = {}
+            for pair in relevances_str.split(","):
+                if ":" in pair:
+                    sym, rel = pair.split(":", 1)
+                    relevances[sym.strip()] = rel.strip()
 
-            if sentiment in ("bullish", "bearish", "neutral"):
-                stats[sentiment] += 1
+            for sym, sentiment in sentiments.items():
+                if symbol and sym.upper() != symbol.upper():
+                    continue
+
+                article_key = f"{article_id}_{sym}"
+                if article_key in seen_articles:
+                    continue
+                seen_articles[article_key] = True
+
+                if sym not in company_stats:
+                    company_stats[sym] = {
+                        "symbol": sym,
+                        "total_mentions": 0,
+                        "weighted_mentions": 0.0,
+                        "primary_mentions": 0,
+                        "bullish": 0.0,
+                        "bearish": 0.0,
+                        "neutral": 0.0,
+                        "sentiment_score": 0.0,
+                    }
+
+                stats = company_stats[sym]
+                stats["total_mentions"] += 1
+                stats["weighted_mentions"] += weight
+                if relevances.get(sym) == "primary":
+                    stats["primary_mentions"] += 1
+
+                if sentiment == "bullish":
+                    stats["bullish"] += weight
+                elif sentiment == "bearish":
+                    stats["bearish"] += weight
+                elif sentiment == "neutral":
+                    stats["neutral"] += weight
+
+        if len(hits) < 250:
+            break
+        search_params["page"] += 1
 
     for sym, stats in company_stats.items():
-        total = stats["total_mentions"]
-        if total > 0:
+        total_w = stats["weighted_mentions"]
+        if total_w > 0:
             stats["sentiment_score"] = round(
-                (stats["bullish"] - stats["bearish"]) / total, 3
+                (stats["bullish"] - stats["bearish"]) / total_w, 4
             )
+        stats["bullish"] = round(stats["bullish"], 3)
+        stats["bearish"] = round(stats["bearish"], 3)
+        stats["neutral"] = round(stats["neutral"], 3)
+        stats["weighted_mentions"] = round(stats["weighted_mentions"], 3)
 
-    results = sorted(company_stats.values(), key=lambda x: x["total_mentions"], reverse=True)
+    results = sorted(company_stats.values(), key=lambda x: x["weighted_mentions"], reverse=True)
 
     if not symbol:
         results = results[:limit]
@@ -247,42 +319,50 @@ def get_sentiment_index(symbol: str = None, limit: int = 50) -> list[dict]:
 
 def search_articles(query: str, n_results: int = 10, company: str = None) -> list[dict]:
     model = get_embedding_model()
-    collection = get_chroma_collection()
+    client = get_typesense_client()
+    ensure_collection()
 
-    query_embedding = model.encode([query]).tolist()
+    query_embedding = model.encode([query]).tolist()[0]
 
-    where = None
+    search_params = {
+        "q": "*",
+        "vector_query": f"embedding:({query_embedding}, k:{n_results * 3})",
+        "per_page": n_results * 3,
+        "include_fields": "article_id,document,title,companies,company_sentiments,"
+                          "article_summary,topic_threads,source_name,published_at",
+    }
+
     if company:
-        where = {"companies": {"$contains": company.upper()}}
+        search_params["filter_by"] = f"companies:={company.upper()}"
 
-    results = collection.query(
-        query_embeddings=query_embedding,
-        n_results=n_results,
-        where=where,
-        include=["documents", "metadatas", "distances"],
-    )
+    results = client.collections[COLLECTION_NAME].documents.search(search_params)
 
     hits = []
     seen_articles = set()
-    for i, doc_id in enumerate(results["ids"][0]):
-        meta = results["metadatas"][0][i]
-        article_id = meta["article_id"]
+    for hit in results.get("hits", []):
+        doc = hit["document"]
+        article_id = doc["article_id"]
 
         if article_id in seen_articles:
             continue
         seen_articles.add(article_id)
 
+        vector_distance = hit.get("vector_distance", 0)
+
         hits.append({
             "article_id": article_id,
-            "chunk": results["documents"][0][i],
-            "title": meta.get("title", ""),
-            "companies": meta.get("companies", ""),
-            "company_sentiments": meta.get("company_sentiments", ""),
-            "article_summary": meta.get("article_summary", ""),
-            "topic_threads": meta.get("topic_threads", ""),
-            "source_name": meta.get("source_name", ""),
-            "published_at": meta.get("published_at", ""),
-            "distance": results["distances"][0][i],
+            "chunk": doc.get("document", ""),
+            "title": doc.get("title", ""),
+            "companies": ",".join(doc.get("companies", [])),
+            "company_sentiments": doc.get("company_sentiments", ""),
+            "article_summary": doc.get("article_summary", ""),
+            "topic_threads": doc.get("topic_threads", ""),
+            "source_name": doc.get("source_name", ""),
+            "published_at": doc.get("published_at", ""),
+            "distance": vector_distance,
         })
+
+        if len(hits) >= n_results:
+            break
 
     return hits
