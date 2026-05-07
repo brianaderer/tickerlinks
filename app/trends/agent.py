@@ -94,13 +94,24 @@ def gather_topics() -> list[dict]:
         search_params["page"] += 1
 
     articles.sort(key=lambda a: a["published_at_ts"], reverse=True)
-    logger.info("Gathered %d articles with topic tags for trending", len(articles))
+
+    # Filter to full-text articles only (exclude summary-only)
+    from app.models import NewsArticle as NA
+    scraped_ids = set(
+        row[0] for row in
+        NA.query.with_entities(NA.id)
+        .filter(NA.id.in_([a["article_id"] for a in articles]), NA.content_source == "scraped")
+        .all()
+    )
+    articles = [a for a in articles if a["article_id"] in scraped_ids]
+
+    logger.info("Gathered %d full-text articles with topic tags for trending", len(articles))
     return articles
 
 
 def _format_topic_data(articles: list[dict]) -> str:
     lines = []
-    for a in articles[:50]:
+    for a in articles[:100]:
         topics = ", ".join(a["topics"][:5]) if a["topics"] else "none"
         companies = ", ".join(a["companies"][:5]) if a["companies"] else "none"
         lines.append(
@@ -122,7 +133,7 @@ def analyze_trends(articles: list[dict], today: str) -> list[dict]:
     messages = [
         SystemMessage(content=ANALYZE_SYSTEM.format(today=today)),
         HumanMessage(content=(
-            f"Here are the {min(len(articles), 50)} most recent articles from the last 7 days:\n\n"
+            f"Here are the {min(len(articles), 100)} most recent articles from the last 7 days:\n\n"
             f"{topic_data}\n\n"
             f"Identify the 10 most significant trends. You may use the research_company tool "
             f"up to {MAX_RESEARCH_CALLS} times if needed. /no_think"
