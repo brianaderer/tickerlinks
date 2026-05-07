@@ -71,7 +71,8 @@ export default function CompanyDetail() {
           <h3 className="font-serif text-base font-bold text-stone-900">Predictions</h3>
           <button
             onClick={() => runPrediction.mutate()}
-            disabled={isPending}
+            disabled={isPending || !matches?.length}
+            title={!matches?.length ? "No signals detected for this company" : undefined}
             className="flex items-center gap-1.5 px-3 py-1 text-xs font-sans font-semibold border border-stone-300 rounded hover:bg-stone-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {isPending ? (
@@ -96,7 +97,9 @@ export default function CompanyDetail() {
             {predictions.map((p) => <PredictionCard key={p.id} prediction={p} />)}
           </div>
         ) : !isPending ? (
-          <p className="text-sm font-sans text-stone-400 italic">No recent predictions. Click "Run Prediction" to analyze this company.</p>
+          <p className="text-sm font-sans text-stone-400 italic">
+            {matches?.length ? 'No recent predictions. Click "Run Prediction" to analyze this company.' : "No signals detected — predictions require active signals."}
+          </p>
         ) : null}
       </section>
 

@@ -52,6 +52,18 @@ def run_company_prediction(company_id: int):
     logger.info("Running manual prediction for %s", symbol)
     sse_publish("signals", "analysis_started", {"mode": "manual", "symbol": symbol})
 
+    from app.models import SignalMatch
+    recent_signals = SignalMatch.query.filter_by(company_id=company_id).count()
+    if recent_signals == 0:
+        logger.info("No signals for %s, skipping prediction", symbol)
+        sse_publish("signals", "analysis_complete", {
+            "mode": "manual",
+            "symbol": symbol,
+            "prediction": None,
+            "error": "No signals detected for this company",
+        })
+        return {"total_signals": 0, "skipped": True}
+
     result = run_analysis(company_ids=[company_id], skip_predict=False)
     logger.info("Manual prediction complete for %s: %s", symbol, result)
 
