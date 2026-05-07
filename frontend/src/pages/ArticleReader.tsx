@@ -81,7 +81,7 @@ export default function ArticleReader() {
       {paragraphs ? (
         <div className="space-y-4">
           {paragraphs.map((p, i) => (
-            <p key={i} className="font-body text-base text-stone-800 leading-relaxed">{p}</p>
+            <p key={i} className="font-body text-base text-stone-800 leading-relaxed">{decodeHtml(p)}</p>
           ))}
         </div>
       ) : (
