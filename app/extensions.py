@@ -19,6 +19,7 @@ def celery_init_app(app):
     celery.conf.task_default_queue = "celery"
     celery.conf.task_routes = {
         "app.tasks.maintenance.*": {"queue": "backfill"},
+        "app.tasks.chat.*": {"queue": "user"},
     }
     celery.conf.beat_schedule = {
         "fetch-market-data": {
@@ -40,6 +41,10 @@ def celery_init_app(app):
         "run-signal-analysis": {
             "task": "app.tasks.analyze.run_signal_analysis",
             "schedule": 900.0,  # every 15 minutes
+        },
+        "generate-report": {
+            "task": "app.tasks.report.generate_report",
+            "schedule": 3600.0,  # every hour
         },
         "check-backtest-windows": {
             "task": "app.tasks.backtest.check_backtest_windows",

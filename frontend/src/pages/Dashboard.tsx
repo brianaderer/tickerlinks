@@ -4,7 +4,7 @@ import LinkedMarkdown from "../components/LinkedMarkdown";
 import { useLatestReport } from "../api/reports";
 import { usePredictions } from "../api/predictions";
 import { useSignalDigests } from "../api/signals";
-import { useArticles, useSentiment, useArticlesByIds } from "../api/articles";
+import { useArticles, useArticle, useSentiment, useArticlesByIds } from "../api/articles";
 import { useTrends } from "../api/trends";
 import SignalBadge from "../components/SignalBadge";
 import EmptyState from "../components/EmptyState";
@@ -19,31 +19,45 @@ export default function Dashboard() {
   const { data: trendSnapshot } = useTrends();
   const trends = trendSnapshot?.trends;
 
-  // Collect top article IDs from trending agent (deduped, ordered by trend rank)
-  const topStoryIds = useMemo(() => {
-    if (!trends?.length) return [];
+  // Collect all article IDs from top trends (deduped) + map article->trend headline
+  const { topStoryIds, trendByArticle } = useMemo(() => {
+    const trendMap = new Map<number, string>();
+    if (!trends?.length) return { topStoryIds: [] as number[], trendByArticle: trendMap };
     const seen = new Set<number>();
     const ids: number[] = [];
-    for (const t of trends.slice(0, 4)) {
+    for (const t of trends.slice(0, 6)) {
       for (const aid of t.article_ids ?? []) {
         if (!seen.has(aid)) {
           seen.add(aid);
           ids.push(aid);
+          trendMap.set(aid, t.headline);
         }
-        if (ids.length >= 10) break;
       }
-      if (ids.length >= 10) break;
     }
-    return ids;
+    return { topStoryIds: ids, trendByArticle: trendMap };
   }, [trends]);
 
   const { data: topStoryArticles } = useArticlesByIds(topStoryIds);
-  // Maintain trend-ranked order
+
+  // Filter out summary-only articles, boost those with company mentions, maintain trend rank
   const topStories = useMemo(() => {
     if (!topStoryArticles?.length) return [];
     const map = new Map(topStoryArticles.map((a) => [a.id, a]));
-    return topStoryIds.map((id) => map.get(id)).filter(Boolean) as typeof topStoryArticles;
+    return topStoryIds
+      .map((id) => map.get(id))
+      .filter((a): a is NonNullable<typeof a> => !!a && a.content_source !== "summary")
+      .sort((a, b) => {
+        const aScore = (a.companies?.length ?? 0) > 0 ? 1 : 0;
+        const bScore = (b.companies?.length ?? 0) > 0 ? 1 : 0;
+        return bScore - aScore;
+      });
   }, [topStoryArticles, topStoryIds]);
+
+  const leadStories = useMemo(() => {
+    return topStories.length > 0 ? topStories : articles ?? [];
+  }, [topStories, articles]);
+  const leadArticleId = leadStories[0]?.id ?? 0;
+  const { data: leadDetail } = useArticle(leadArticleId);
 
   return (
     <div className="space-y-0">
@@ -67,13 +81,20 @@ export default function Dashboard() {
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 mt-4">
                 <div className="lg:col-span-7 pr-0 lg:pr-8 lg:border-r border-stone-300">
+                  {trendByArticle.get(lead.id) && (
+                    <span className="text-[11px] font-sans font-semibold uppercase tracking-wider text-stone-400 mb-2 block">
+                      {trendByArticle.get(lead.id)}
+                    </span>
+                  )}
                   <Link to="/articles/$articleId" params={{ articleId: String(lead.id) }} className="group">
                     <h2 className="font-serif text-3xl font-black leading-tight text-stone-900 group-hover:underline">
                       {decodeHtml(lead.title)}
                     </h2>
                   </Link>
-                  {lead.summary && (
-                    <p className="font-body text-base text-stone-600 leading-relaxed mt-3 line-clamp-4">{decodeHtml(lead.summary)}</p>
+                  {(lead.summary || leadDetail?.full_text) && (
+                    <p className="font-body text-base text-stone-600 leading-relaxed mt-3 line-clamp-6">
+                      {decodeHtml(lead.summary || leadDetail?.full_text || "")}
+                    </p>
                   )}
                   <div className="flex items-center gap-3 mt-3 text-xs text-stone-400 font-sans">
                     <span className="font-medium">{lead.source_name}</span>
@@ -87,6 +108,11 @@ export default function Dashboard() {
                 <div className="lg:col-span-5 pl-0 lg:pl-8 mt-4 lg:mt-0">
                   {secondary.map((a, i) => (
                     <div key={a.id} className={`${i > 0 ? "mt-4 pt-4 border-t border-stone-200" : ""}`}>
+                      {trendByArticle.get(a.id) && (
+                        <span className="text-[10px] font-sans font-semibold uppercase tracking-wider text-stone-400 mb-1 block">
+                          {trendByArticle.get(a.id)}
+                        </span>
+                      )}
                       <Link to="/articles/$articleId" params={{ articleId: String(a.id) }} className="group">
                         <h3 className="font-serif text-lg font-bold text-stone-900 group-hover:underline leading-snug">{decodeHtml(a.title)}</h3>
                         {a.summary && <p className="font-body text-sm text-stone-600 line-clamp-2 mt-1">{decodeHtml(a.summary)}</p>}

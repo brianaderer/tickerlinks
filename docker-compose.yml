@@ -99,6 +99,28 @@ services:
       typesense:
         condition: service_healthy
 
+  celery-user:
+    build: .
+    env_file: .env
+    command: celery -A celery_worker.celery worker --pool=prefork --concurrency=5 -Q user --loglevel=info
+    environment:
+      FLASK_APP: app
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-Qwen/Qwen3-14B}
+      LLM_API_BASE: ${LLM_API_BASE:-https://api.deepinfra.com/v1/openai}
+      TYPESENSE_HOST: typesense
+      TYPESENSE_PORT: "8108"
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:-stocklynx-typesense-key}
+    volumes:
+      - .:/app
+    depends_on:
+      api:
+        condition: service_started
+      typesense:
+        condition: service_healthy
+
   celery-beat:
     build: .
     command: celery -A celery_worker.celery beat --loglevel=info

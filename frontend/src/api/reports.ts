@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import type { Report } from "../types";
 
-export function useReports(limit = 20) {
+export function useReports(limit = 10) {
   return useQuery({
     queryKey: ["reports", limit],
     queryFn: () => apiFetch<Report[]>(`/reports?limit=${limit}`),
