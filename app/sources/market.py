@@ -41,7 +41,8 @@ class MarketFetcher(BaseFetcher):
             logger.warning("Company %s not found in DB, skipping", symbol)
             return []
 
-        url = YAHOO_CHART_URL.format(symbol=symbol)
+        yahoo_symbol = symbol.replace(".", "-")
+        url = YAHOO_CHART_URL.format(symbol=yahoo_symbol)
         params = {"range": self.period, "interval": self.interval}
         resp = requests.get(url, headers=HEADERS, params=params, timeout=15)
         resp.raise_for_status()
@@ -105,7 +106,8 @@ class MarketFetcher(BaseFetcher):
     @staticmethod
     def sync_company_info(symbol: str) -> dict | None:
         try:
-            url = YAHOO_CHART_URL.format(symbol=symbol)
+            yahoo_symbol = symbol.replace(".", "-")
+            url = YAHOO_CHART_URL.format(symbol=yahoo_symbol)
             resp = requests.get(
                 url, headers=HEADERS, params={"range": "1d", "interval": "1d"}, timeout=15
             )
