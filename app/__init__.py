@@ -14,8 +14,9 @@ def create_app(config_class=Config):
     from app.api import bp as api_bp
     app.register_blueprint(api_bp, url_prefix="/api")
 
-    from app.cli import seed_command, process_backlog_command
+    from app.cli import seed_command, process_backlog_command, backfill_prices_command
     app.cli.add_command(seed_command)
     app.cli.add_command(process_backlog_command)
+    app.cli.add_command(backfill_prices_command)
 
     return app

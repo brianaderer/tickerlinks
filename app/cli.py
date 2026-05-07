@@ -124,3 +124,12 @@ def process_backlog_command():
         process_article.delay(article.id)
 
     click.echo(f"Queued {len(articles)} articles for processing")
+
+
+@click.command("backfill-prices")
+@with_appcontext
+def backfill_prices_command():
+    """Queue 60-day 15m price backfill for all companies."""
+    from app.tasks.maintenance import backfill_all
+    result = backfill_all.delay()
+    click.echo(f"Backfill queued: {result.id}")

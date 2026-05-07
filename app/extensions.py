@@ -11,15 +11,18 @@ celery = Celery(__name__)
 def celery_init_app(app):
     celery.conf.broker_url = app.config["CELERY_BROKER_URL"]
     celery.conf.result_backend = app.config["CELERY_RESULT_BACKEND"]
-    celery.conf.include = ["app.tasks.fetch", "app.tasks.analyze", "app.tasks.backtest", "app.tasks.articles", "app.tasks.report"]
+    celery.conf.include = [
+        "app.tasks.fetch", "app.tasks.analyze", "app.tasks.backtest",
+        "app.tasks.articles", "app.tasks.report", "app.tasks.maintenance",
+    ]
     celery.conf.beat_schedule = {
         "fetch-market-data": {
             "task": "app.tasks.fetch.fetch_market_data",
-            "schedule": 3600.0,
+            "schedule": 900.0,  # every 15 minutes
         },
         "fetch-news": {
             "task": "app.tasks.fetch.fetch_news",
-            "schedule": 3600.0,
+            "schedule": 900.0,  # every 15 minutes
         },
         "fetch-insider-trades": {
             "task": "app.tasks.fetch.fetch_insider_trades",
@@ -37,7 +40,6 @@ def celery_init_app(app):
             "task": "app.tasks.backtest.check_backtest_windows",
             "schedule": 1800.0,  # every 30 minutes
         },
-
     }
     celery.conf.timezone = "UTC"
 

@@ -12,8 +12,16 @@ logger = logging.getLogger(__name__)
 
 @celery.task(name="app.tasks.fetch.fetch_market_data")
 def fetch_market_data():
-    logger.info("Starting market data fetch")
-    fetcher = MarketFetcher(period="5d", interval="1h")
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    hour_utc = now.hour
+    # 4am-8pm ET = 08:00-00:00 UTC
+    if hour_utc >= 0 and hour_utc < 8:
+        logger.info("Outside trading hours (UTC %d), skipping market fetch", hour_utc)
+        return {"rows_fetched": 0, "skipped": True}
+
+    logger.info("Starting market data fetch (15m)")
+    fetcher = MarketFetcher(period="1d", interval="15m")
     results = fetcher.fetch()
     logger.info("Market fetch complete: %d rows", len(results))
     return {"rows_fetched": len(results)}

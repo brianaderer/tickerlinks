@@ -15,7 +15,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 
 class MarketFetcher(BaseFetcher):
-    def __init__(self, period="5d", interval="1h"):
+    def __init__(self, period="1d", interval="15m"):
         self.period = period
         self.interval = interval
 
