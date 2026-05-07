@@ -76,8 +76,9 @@ def aggregate_node(state: EngineState) -> EngineState:
             },
         })
 
+    MAX_PREDICTIONS = 20
     predictions.sort(key=lambda p: p["confidence"], reverse=True)
-    state["predictions"] = predictions
+    state["predictions"] = predictions[:MAX_PREDICTIONS]
     logger.info("Aggregated %d predictions from %d signals (weighted)", len(predictions), len(signals))
     return state
 
