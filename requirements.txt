@@ -18,4 +18,3 @@ typesense>=0.21.0
 beautifulsoup4>=4.12.0
 pytest>=8.0.0
 sentence-transformers>=3.0.0
-playwright>=1.40.0
