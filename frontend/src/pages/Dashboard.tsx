@@ -217,7 +217,7 @@ export default function Dashboard() {
         <section className="py-6 border-b border-stone-300">
           <h3 className="font-serif text-lg font-bold text-stone-900 mb-1">Market Brief</h3>
           <p className="text-xs font-sans text-stone-400 mb-3">
-            Updated {new Date(report.generated_at).toLocaleString()}
+            {report.generated_at ? `Updated ${new Date(report.generated_at).toLocaleString()}` : ""}
           </p>
           <LinkedMarkdown>{report.summary}</LinkedMarkdown>
         </section>
@@ -249,7 +249,7 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans">
                     <span>{d.match_count} signal{d.match_count !== 1 ? "s" : ""}</span>
                     <span>&bull;</span>
-                    <span>{new Date(d.generated_at).toLocaleTimeString()}</span>
+                    {d.generated_at && <span>{new Date(d.generated_at).toLocaleTimeString()}</span>}
                   </div>
                 </div>
               ))}
