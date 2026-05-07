@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -16,84 +17,209 @@ from app.signals.state import EngineState
 
 logger = logging.getLogger(__name__)
 
-LOOKAHEAD_HOURS = 24
-MIN_WINDOW_SIZE = 30
-STEP_SIZE = 8
 MOVEMENT_THRESHOLD = 0.001
 
+MORNING_START_UTC = 8   # 4am ET
+MORNING_END_UTC = 16    # 12pm ET
+AFTERNOON_START_UTC = 16  # 12pm ET
+AFTERNOON_END_UTC = 24    # 8pm ET (midnight UTC next day)
 
-def run_backtest(company_ids: list[int] | None = None) -> dict:
-    if not company_ids:
-        companies = Company.query.filter_by(active=True).all()
-        company_ids = [c.id for c in companies]
+HISTORICAL_DETECTORS = [
+    TechnicalDetector,
+    VolumeDetector,
+    FundamentalsDetector,
+]
+ARTICLE_DETECTORS = [
+    ArticleSentimentDetector,
+    MentionVelocityDetector,
+    ComentionDetector,
+    SourceBreadthDetector,
+]
 
-    historical_detectors = [
-        TechnicalDetector(),
-        VolumeDetector(),
-        FundamentalsDetector(),
-    ]
-    article_detectors = [
-        ArticleSentimentDetector(),
-        MentionVelocityDetector(),
-        ComentionDetector(),
-        SourceBreadthDetector(),
-    ]
 
-    # Key: (signal_name, direction) -> {correct, incorrect, total}
+def get_due_windows() -> list[dict]:
+    now = datetime.now(timezone.utc)
+
+    windows = []
+    for day_offset in range(30, -1, -1):
+        day = (now - timedelta(days=day_offset)).date()
+
+        morning_start = datetime(day.year, day.month, day.day, MORNING_START_UTC, tzinfo=timezone.utc)
+        morning_end = datetime(day.year, day.month, day.day, MORNING_END_UTC, tzinfo=timezone.utc)
+
+        afternoon_start = morning_end
+        afternoon_end_day = day + timedelta(days=1) if AFTERNOON_END_UTC == 24 else day
+        afternoon_end_hour = 0 if AFTERNOON_END_UTC == 24 else AFTERNOON_END_UTC
+        afternoon_end = datetime(afternoon_end_day.year, afternoon_end_day.month, afternoon_end_day.day, afternoon_end_hour, tzinfo=timezone.utc)
+
+        if morning_end <= now:
+            windows.append({"start": morning_start, "end": morning_end, "label": f"{day}_morning"})
+        if afternoon_end <= now:
+            windows.append({"start": afternoon_start, "end": afternoon_end, "label": f"{day}_afternoon"})
+
+    already_computed = _get_computed_labels()
+    due = [w for w in windows if w["label"] not in already_computed]
+
+    due.sort(key=lambda w: w["start"])
+    return due
+
+
+def _get_computed_labels() -> set[str]:
+    labels = set()
+    signals = Signal.query.filter_by(active=True).all()
+    for sig in signals:
+        for snap in (sig.accuracy_snapshots or []):
+            label = snap.get("label", "")
+            if label:
+                labels.add(label)
+    return labels
+
+
+def run_window_backtest(window: dict) -> dict:
+    window_start = window["start"]
+    window_end = window["end"]
+    label = window["label"]
+
+    logger.info("Running backtest for window %s (%s to %s)", label, window_start, window_end)
+
+    companies = Company.query.filter_by(active=True).all()
+
+    hist_detectors = [cls() for cls in HISTORICAL_DETECTORS]
+    art_detectors = [cls() for cls in ARTICLE_DETECTORS]
+
     signal_results = defaultdict(lambda: {"correct": 0, "incorrect": 0, "total": 0})
-
     processed = 0
-    for cid in company_ids:
-        company = Company.query.get(cid)
-        if not company:
-            continue
 
+    for company in companies:
         prices = (
-            PriceHistory.query.filter_by(company_id=cid)
+            PriceHistory.query.filter(
+                PriceHistory.company_id == company.id,
+                PriceHistory.timestamp <= window_end,
+            )
             .order_by(PriceHistory.timestamp)
             .all()
         )
-        if len(prices) < MIN_WINDOW_SIZE + LOOKAHEAD_HOURS:
+        if len(prices) < 30:
             continue
 
-        df = pd.DataFrame(
-            [
-                {
-                    "timestamp": p.timestamp,
-                    "open": p.open,
-                    "high": p.high,
-                    "low": p.low,
-                    "close": p.close,
-                    "volume": p.volume or 0,
-                }
-                for p in prices
-            ]
-        )
+        df = pd.DataFrame([
+            {
+                "timestamp": p.timestamp,
+                "open": p.open,
+                "high": p.high,
+                "low": p.low,
+                "close": p.close,
+                "volume": p.volume or 0,
+            }
+            for p in prices
+        ])
         df.set_index("timestamp", inplace=True)
 
-        fund_data = _load_fundamentals(cid, company.symbol)
-        insider_data = _load_insider_trades(cid, company.symbol)
+        window_prices = df.loc[
+            (df.index >= window_start) & (df.index <= window_end)
+        ]
+        pre_window = df.loc[df.index < window_start]
 
-        _backtest_company(cid, company.symbol, df, fund_data, insider_data, historical_detectors, article_detectors, signal_results)
+        if len(pre_window) < 30 or len(window_prices) < 2:
+            continue
+
+        price_at_signal = pre_window["close"].iloc[-1]
+        price_after = window_prices["close"].iloc[-1]
+        actual_change_pct = (price_after - price_at_signal) / price_at_signal
+
+        fund_data = _load_fundamentals(company.id, company.symbol)
+        insider_data = _load_insider_trades(company.id, company.symbol)
+
+        fundamentals_state = {}
+        if fund_data:
+            fund_with_insiders = dict(fund_data)
+            fund_with_insiders["insider_trades"] = insider_data
+            fundamentals_state = {company.id: fund_with_insiders}
+
+        state: EngineState = {
+            "company_ids": [company.id],
+            "price_data": {company.id: {"symbol": company.symbol, "df": pre_window}},
+            "news_data": {},
+            "fundamentals_data": fundamentals_state,
+            "insider_data": {},
+            "signals": [],
+            "predictions": [],
+            "iteration": 0,
+            "max_iterations": 1,
+            "confidence_threshold": 0.5,
+        }
+
+        for detector in hist_detectors:
+            try:
+                signals = detector.detect(state)
+            except Exception:
+                continue
+            _score_signals(signals, actual_change_pct, signal_results)
+
+        for detector in art_detectors:
+            try:
+                signals = detector.detect(state, before=window_start)
+            except Exception:
+                continue
+            _score_signals(signals, actual_change_pct, signal_results)
+
         processed += 1
 
-        if processed % 50 == 0:
-            logger.info("Backtested %d / %d companies", processed, len(company_ids))
+    _persist_snapshot(signal_results, window_start, window_end, label)
 
-    accuracy_map = _compute_accuracy(signal_results)
-    _persist_accuracy(accuracy_map, signal_results)
-
-    logger.info(
-        "Backtest complete: %d companies, %d signal+direction pairs scored",
-        processed, len(accuracy_map),
-    )
+    logger.info("Window %s: tested %d companies, %d signal pairs", label, processed, len(signal_results))
     return {
+        "label": label,
         "companies_tested": processed,
-        "signal_scores": {
-            f"{name}|{direction}": round(acc, 4)
-            for (name, direction), acc in accuracy_map.items()
-        },
+        "signal_pairs": len(signal_results),
     }
+
+
+def _score_signals(signals: list, actual_change_pct: float, signal_results: dict):
+    for sig in signals:
+        name = sig["signal_name"]
+        direction = sig["direction"]
+        key = (name, direction)
+        signal_results[key]["total"] += 1
+
+        if direction == "bullish" and actual_change_pct > MOVEMENT_THRESHOLD:
+            signal_results[key]["correct"] += 1
+        elif direction == "bearish" and actual_change_pct < -MOVEMENT_THRESHOLD:
+            signal_results[key]["correct"] += 1
+        else:
+            signal_results[key]["incorrect"] += 1
+
+
+def _persist_snapshot(signal_results: dict, window_start: datetime, window_end: datetime, label: str):
+    for (name, direction), counts in signal_results.items():
+        total = counts["total"]
+        accuracy = counts["correct"] / total if total > 0 else 0.5
+
+        signal = Signal.query.filter_by(name=name, direction=direction).first()
+        if not signal:
+            signal = Signal(
+                name=name,
+                signal_type=_infer_type(name),
+                direction=direction,
+                description=f"Auto-detected: {name} ({direction})",
+                active=True,
+                accuracy_snapshots=[],
+            )
+            db.session.add(signal)
+            db.session.flush()
+
+        snapshot = {
+            "label": label,
+            "window_start": window_start.isoformat(),
+            "window_end": window_end.isoformat(),
+            "correct": counts["correct"],
+            "incorrect": counts["incorrect"],
+            "total": total,
+            "accuracy": round(accuracy, 4),
+        }
+        signal.push_snapshot(snapshot)
+
+    db.session.commit()
 
 
 def _load_fundamentals(company_id: int, symbol: str) -> dict:
@@ -135,123 +261,16 @@ def _load_insider_trades(company_id: int, symbol: str) -> list[dict]:
     ]
 
 
-def _backtest_company(
-    company_id: int,
-    symbol: str,
-    df: pd.DataFrame,
-    fund_data: dict,
-    insider_data: list,
-    historical_detectors: list,
-    article_detectors: list,
-    signal_results: dict,
-):
-    total_rows = len(df)
-
-    for end_idx in range(MIN_WINDOW_SIZE, total_rows - LOOKAHEAD_HOURS, STEP_SIZE):
-        window_df = df.iloc[:end_idx].copy()
-        lookahead_df = df.iloc[end_idx : end_idx + LOOKAHEAD_HOURS]
-
-        if lookahead_df.empty:
-            continue
-
-        price_at_signal = window_df["close"].iloc[-1]
-        price_after = lookahead_df["close"].iloc[-1]
-        actual_change_pct = (price_after - price_at_signal) / price_at_signal
-
-        window_time = window_df.index[-1]
-        if hasattr(window_time, 'to_pydatetime'):
-            window_time = window_time.to_pydatetime()
-
-        fundamentals_state = {}
-        if fund_data:
-            fund_with_insiders = dict(fund_data)
-            fund_with_insiders["insider_trades"] = insider_data
-            fundamentals_state = {company_id: fund_with_insiders}
-
-        state: EngineState = {
-            "company_ids": [company_id],
-            "price_data": {company_id: {"symbol": symbol, "df": window_df}},
-            "news_data": {},
-            "fundamentals_data": fundamentals_state,
-            "insider_data": {},
-            "signals": [],
-            "predictions": [],
-            "iteration": 0,
-            "max_iterations": 1,
-            "confidence_threshold": 0.5,
-        }
-
-        for detector in historical_detectors:
-            try:
-                signals = detector.detect(state)
-            except Exception:
-                continue
-            _score_signals(signals, actual_change_pct, signal_results)
-
-        for detector in article_detectors:
-            try:
-                signals = detector.detect(state, before=window_time)
-            except Exception:
-                continue
-            _score_signals(signals, actual_change_pct, signal_results)
-
-
-def _score_signals(signals: list, actual_change_pct: float, signal_results: dict):
-    for sig in signals:
-        name = sig["signal_name"]
-        direction = sig["direction"]
-        key = (name, direction)
-        signal_results[key]["total"] += 1
-
-        if direction == "bullish" and actual_change_pct > MOVEMENT_THRESHOLD:
-            signal_results[key]["correct"] += 1
-        elif direction == "bearish" and actual_change_pct < -MOVEMENT_THRESHOLD:
-            signal_results[key]["correct"] += 1
-        else:
-            signal_results[key]["incorrect"] += 1
-
-
-def _compute_accuracy(signal_results: dict) -> dict[tuple[str, str], float]:
-    accuracy = {}
-    for key, counts in signal_results.items():
-        total = counts["total"]
-        if total >= 5:
-            accuracy[key] = counts["correct"] / total
-        else:
-            accuracy[key] = 0.5
-    return accuracy
-
-
-def _persist_accuracy(accuracy_map: dict, signal_results: dict):
-    for (name, direction), accuracy in accuracy_map.items():
-        signal = Signal.query.filter_by(name=name, direction=direction).first()
-        if not signal:
-            signal = Signal(
-                name=name,
-                signal_type=_infer_type(name),
-                direction=direction,
-                description=f"Auto-detected: {name} ({direction})",
-                historical_accuracy=accuracy,
-                sample_size=signal_results[(name, direction)]["total"],
-                active=True,
-            )
-            db.session.add(signal)
-        else:
-            signal.historical_accuracy = accuracy
-            signal.sample_size = signal_results[(name, direction)]["total"]
-
-    db.session.commit()
-    logger.info("Persisted accuracy for %d signal+direction pairs", len(accuracy_map))
-
-
 def _infer_type(name: str) -> str:
     name_lower = name.lower()
     if any(k in name_lower for k in ("rsi", "macd", "bollinger")):
         return "technical"
     if any(k in name_lower for k in ("volume", "divergence", "spike")):
         return "volume"
-    if any(k in name_lower for k in ("sentiment", "news")):
-        return "sentiment"
+    if any(k in name_lower for k in ("sentiment", "news", "article")):
+        return "article"
+    if any(k in name_lower for k in ("mention", "co-mention", "source")):
+        return "article"
     if any(k in name_lower for k in ("insider", "52-week", "near")):
         return "fundamentals"
     return "pattern"

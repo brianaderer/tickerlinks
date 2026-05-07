@@ -33,6 +33,10 @@ def celery_init_app(app):
             "task": "app.tasks.analyze.run_signal_analysis",
             "schedule": 3600.0,
         },
+        "check-backtest-windows": {
+            "task": "app.tasks.backtest.check_backtest_windows",
+            "schedule": 1800.0,  # every 30 minutes
+        },
 
     }
     celery.conf.timezone = "UTC"

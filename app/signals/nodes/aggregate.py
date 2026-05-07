@@ -75,13 +75,10 @@ def aggregate_node(state: EngineState) -> EngineState:
 
 
 def _load_weight_map() -> dict[tuple[str, str], float]:
-    """Load historical accuracy from DB as signal weights, keyed by (name, direction)."""
+    """Load operative accuracy (decay-weighted) from DB as signal weights."""
     signals = Signal.query.filter_by(active=True).all()
     weight_map = {}
     for s in signals:
         key = (s.name, s.direction)
-        if s.historical_accuracy and s.historical_accuracy > 0:
-            weight_map[key] = s.historical_accuracy
-        else:
-            weight_map[key] = DEFAULT_WEIGHT
+        weight_map[key] = s.operative_accuracy
     return weight_map

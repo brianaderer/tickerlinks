@@ -254,6 +254,22 @@ def indices():
     return jsonify(results)
 
 
+@bp.route("/signals/weights")
+def signal_weights():
+    signals = Signal.query.filter_by(active=True).order_by(Signal.signal_type, Signal.name).all()
+    return jsonify([
+        {
+            "signal": s.name,
+            "direction": s.direction,
+            "signal_type": s.signal_type,
+            "weight": round(s.operative_accuracy, 4),
+            "sample_size": s.total_samples,
+            "snapshots": len(s.accuracy_snapshots or []),
+        }
+        for s in signals
+    ])
+
+
 @bp.route("/reports")
 def list_reports():
     limit = request.args.get("limit", 20, type=int)
