@@ -123,9 +123,9 @@ def list_articles():
     limit = request.args.get("limit", 50, type=int)
     company_filter = request.args.get("company")
 
-    query = NewsArticle.query.filter(
-        NewsArticle.content_source != None
-    ).order_by(NewsArticle.published_at.desc())
+    from sqlalchemy import func, case
+    sort_col = func.coalesce(NewsArticle.published_at, NewsArticle.fetched_at)
+    query = NewsArticle.query.order_by(sort_col.desc())
     if company_filter:
         company = Company.query.filter_by(
             symbol=company_filter.upper()
