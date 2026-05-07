@@ -12,93 +12,102 @@ export default function Dashboard() {
   const { data: articles } = useArticles();
   const { data: sentiment } = useSentiment();
 
-  const leadPrediction = predictions?.[0];
-  const restPredictions = predictions?.slice(1, 4);
+  const lead = predictions?.[0];
+  const secondary = predictions?.slice(1, 3);
+  const rest = predictions?.slice(3, 6);
 
   return (
-    <div className="space-y-8">
-      {/* Hero: Lead Story */}
-      {leadPrediction && (
-        <section className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          <div className="lg:col-span-3 bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-            <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600">Lead Story</span>
-            <h2 className="mt-2 text-2xl font-bold text-gray-900">
-              {leadPrediction.company}{" "}
-              <span className={leadPrediction.direction === "bullish" ? "text-emerald-600" : "text-red-600"}>
-                {leadPrediction.direction === "bullish" ? "▲" : "▼"} {leadPrediction.direction}
+    <div className="space-y-0">
+      {/* Masthead section label */}
+      <div className="text-center mb-6">
+        <p className="text-xs font-sans uppercase tracking-[0.2em] text-stone-400">
+          Market Intelligence &mdash; Today's Edition
+        </p>
+      </div>
+
+      {/* Above the fold: Lead + Secondary */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 border-t-2 border-stone-900">
+        {/* Lead story */}
+        {lead && (
+          <div className="lg:col-span-7 py-6 pr-0 lg:pr-8 lg:border-r border-stone-300">
+            <span className="text-xs font-sans font-semibold uppercase tracking-wider text-stone-400">Top Story</span>
+            <h2 className="mt-2 font-serif text-4xl font-black leading-tight text-stone-900">
+              {lead.company} Outlook Turns{" "}
+              <span className={lead.direction === "bullish" ? "text-emerald-700" : "text-red-700"}>
+                {lead.direction === "bullish" ? "Bullish" : "Bearish"}
               </span>
-              {" "}at {(leadPrediction.confidence * 100).toFixed(0)}% confidence
             </h2>
-            <p className="mt-3 text-gray-600 leading-relaxed">{leadPrediction.reasoning}</p>
-            <div className="mt-4 flex items-center gap-4 text-sm text-gray-400">
-              <span>{leadPrediction.signal_count} contributing signals</span>
-              {leadPrediction.target_date && (
-                <span>Target: {new Date(leadPrediction.target_date).toLocaleDateString()}</span>
-              )}
-              <span>{new Date(leadPrediction.created_at).toLocaleString()}</span>
-            </div>
+            <p className="mt-1 font-sans text-sm text-stone-400">
+              Confidence rated at {(lead.confidence * 100).toFixed(0)}% &bull; {lead.signal_count} contributing signals
+              {lead.target_date && <> &bull; Target: {new Date(lead.target_date).toLocaleDateString()}</>}
+            </p>
+            <p className="mt-4 font-body text-base text-stone-700 leading-relaxed">
+              {lead.reasoning}
+            </p>
             <Link
               to="/companies/$symbol"
-              params={{ symbol: leadPrediction.company }}
-              className="inline-block mt-4 text-sm font-medium text-emerald-600 hover:text-emerald-700"
+              params={{ symbol: lead.company }}
+              className="inline-block mt-4 text-sm font-sans font-medium text-stone-900 underline underline-offset-2 decoration-stone-300 hover:decoration-stone-900"
             >
-              View {leadPrediction.company} details →
+              Full coverage of {lead.company} &rarr;
             </Link>
           </div>
+        )}
 
-          <div className="lg:col-span-2 flex flex-col gap-4">
-            {restPredictions?.map((p) => (
-              <Link
-                key={p.id}
-                to="/companies/$symbol"
-                params={{ symbol: p.company }}
-                className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold text-gray-900">{p.company}</span>
+        {/* Secondary stories */}
+        <div className="lg:col-span-5 py-6 pl-0 lg:pl-8">
+          {secondary?.map((p, i) => (
+            <div key={p.id} className={`${i > 0 ? "mt-6 pt-6 border-t border-stone-200" : ""}`}>
+              <Link to="/companies/$symbol" params={{ symbol: p.company }} className="group">
+                <h3 className="font-serif text-xl font-bold text-stone-900 group-hover:underline leading-snug">
+                  {p.company}: {p.direction === "bullish" ? "Gains Expected" : "Losses Anticipated"} on {p.signal_count}-Signal Consensus
+                </h3>
+                <p className="mt-2 font-body text-sm text-stone-600 leading-relaxed line-clamp-3">{p.reasoning}</p>
+                <div className="mt-2 flex items-center gap-3">
                   <SignalBadge direction={p.direction} confidence={p.confidence} />
+                  <span className="text-xs text-stone-400 font-sans">{new Date(p.created_at).toLocaleTimeString()}</span>
                 </div>
-                <p className="text-sm text-gray-500 line-clamp-2">{p.reasoning}</p>
-                <span className="block mt-2 text-xs text-gray-400">{p.signal_count} signals</span>
               </Link>
-            ))}
-          </div>
-        </section>
-      )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Rule */}
+      <div className="border-t border-stone-300 my-2" />
 
       {/* Market Brief */}
       {report && (
-        <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Market Brief</span>
-            <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded">{report.report_type}</span>
-            <span className="text-xs text-gray-400 ml-auto">{new Date(report.generated_at).toLocaleString()}</span>
-          </div>
-          <p className="text-gray-700 leading-relaxed">{report.summary}</p>
+        <section className="py-6 border-b border-stone-300">
+          <h3 className="font-serif text-lg font-bold text-stone-900 mb-1">Market Brief</h3>
+          <p className="text-xs font-sans text-stone-400 mb-3">
+            {report.report_type.toUpperCase()} &bull; {new Date(report.generated_at).toLocaleString()}
+          </p>
+          <p className="font-body text-sm text-stone-700 leading-relaxed">{report.summary}</p>
           {report.data && (
-            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="mt-4 flex gap-6 font-sans">
               {report.data.total_signals != null && (
-                <div className="text-center p-3 bg-gray-50 rounded-xl">
-                  <div className="text-2xl font-bold text-gray-900">{report.data.total_signals as number}</div>
-                  <div className="text-xs text-gray-500 mt-1">Signals</div>
+                <div>
+                  <span className="text-2xl font-bold text-stone-900">{report.data.total_signals as number}</span>
+                  <span className="block text-xs text-stone-400 uppercase tracking-wider mt-0.5">Signals</span>
                 </div>
               )}
               {report.data.bullish != null && (
-                <div className="text-center p-3 bg-emerald-50 rounded-xl">
-                  <div className="text-2xl font-bold text-emerald-700">{report.data.bullish as number}</div>
-                  <div className="text-xs text-emerald-600 mt-1">Bullish</div>
+                <div>
+                  <span className="text-2xl font-bold text-emerald-700">{report.data.bullish as number}</span>
+                  <span className="block text-xs text-stone-400 uppercase tracking-wider mt-0.5">Bullish</span>
                 </div>
               )}
               {report.data.bearish != null && (
-                <div className="text-center p-3 bg-red-50 rounded-xl">
-                  <div className="text-2xl font-bold text-red-700">{report.data.bearish as number}</div>
-                  <div className="text-xs text-red-600 mt-1">Bearish</div>
+                <div>
+                  <span className="text-2xl font-bold text-red-700">{report.data.bearish as number}</span>
+                  <span className="block text-xs text-stone-400 uppercase tracking-wider mt-0.5">Bearish</span>
                 </div>
               )}
               {report.data.active_companies != null && (
-                <div className="text-center p-3 bg-gray-50 rounded-xl">
-                  <div className="text-2xl font-bold text-gray-900">{report.data.active_companies as number}</div>
-                  <div className="text-xs text-gray-500 mt-1">Active Tickers</div>
+                <div>
+                  <span className="text-2xl font-bold text-stone-900">{report.data.active_companies as number}</span>
+                  <span className="block text-xs text-stone-400 uppercase tracking-wider mt-0.5">Tickers</span>
                 </div>
               )}
             </div>
@@ -106,73 +115,97 @@ export default function Dashboard() {
         </section>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Signal Feed */}
-        <section className="lg:col-span-1">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Breaking Signals</h3>
-          <div className="space-y-2">
+      {/* Three-column below the fold */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 py-6">
+        {/* Col 1: Signal Wire */}
+        <div className="lg:pr-6 lg:border-r border-stone-300">
+          <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Signal Wire</h3>
+          <div className="h-px bg-stone-900 mb-4" />
+          <div className="space-y-4">
             {matches?.map((m) => (
-              <div key={m.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
+              <div key={m.id} className="border-b border-stone-200 pb-3">
                 <div className="flex items-center justify-between mb-1">
                   <Link
                     to="/companies/$symbol"
                     params={{ symbol: m.company }}
-                    className="font-semibold text-emerald-600 hover:underline"
+                    className="font-serif font-bold text-stone-900 hover:underline"
                   >
                     {m.company}
                   </Link>
                   <SignalBadge direction={m.direction} confidence={m.confidence} />
                 </div>
-                <p className="text-sm text-gray-700">{m.signal}</p>
-                <span className="text-xs text-gray-400">{m.signal_type} · {new Date(m.detected_at).toLocaleTimeString()}</span>
+                <p className="font-body text-sm text-stone-600">{m.signal}</p>
+                <span className="text-xs text-stone-400 font-sans">{m.signal_type} &bull; {new Date(m.detected_at).toLocaleTimeString()}</span>
               </div>
             ))}
           </div>
-        </section>
+        </div>
 
-        {/* Sentiment Snapshot */}
-        <section className="lg:col-span-1">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Sentiment Snapshot</h3>
-          <div className="space-y-2">
+        {/* Col 2: Sentiment Desk */}
+        <div className="lg:px-6 lg:border-r border-stone-300 mt-6 lg:mt-0">
+          <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Sentiment Desk</h3>
+          <div className="h-px bg-stone-900 mb-4" />
+          <div className="space-y-3">
             {sentiment?.map((s) => (
-              <div key={s.symbol} className="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-                <div className="flex items-center justify-between mb-2">
+              <div key={s.symbol} className="border-b border-stone-200 pb-3">
+                <div className="flex items-center justify-between mb-1.5">
                   <Link
                     to="/companies/$symbol"
                     params={{ symbol: s.symbol }}
-                    className="font-semibold text-emerald-600 hover:underline"
+                    className="font-serif font-bold text-stone-900 hover:underline"
                   >
                     {s.symbol}
                   </Link>
-                  <span className={`text-sm font-bold ${s.sentiment >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                  <span className={`font-sans text-sm font-semibold tabular-nums ${s.sentiment >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                     {s.sentiment >= 0 ? "+" : ""}{s.sentiment.toFixed(2)}
                   </span>
                 </div>
-                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-1 bg-stone-100 rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${s.sentiment >= 0 ? "bg-emerald-500" : "bg-red-500"}`}
-                    style={{ width: `${Math.abs(s.sentiment) * 100}%`, marginLeft: s.sentiment < 0 ? "auto" : undefined }}
+                    className={`h-full rounded-full ${s.sentiment >= 0 ? "bg-emerald-600" : "bg-red-600"}`}
+                    style={{ width: `${Math.abs(s.sentiment) * 100}%` }}
                   />
                 </div>
-                <span className="text-xs text-gray-400 mt-1 block">{s.article_count} articles</span>
+                <span className="text-xs text-stone-400 font-sans mt-1 block">{s.article_count} articles</span>
               </div>
             ))}
           </div>
-        </section>
 
-        {/* Latest Headlines */}
-        <section className="lg:col-span-1">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Latest Headlines</h3>
-          <div className="space-y-2">
+          {/* Additional predictions */}
+          {rest && rest.length > 0 && (
+            <>
+              <h3 className="font-serif text-base font-bold text-stone-900 mt-6 mb-1">Also Moving</h3>
+              <div className="h-px bg-stone-900 mb-4" />
+              {rest.map((p) => (
+                <div key={p.id} className="border-b border-stone-200 pb-3 mb-3">
+                  <Link to="/companies/$symbol" params={{ symbol: p.company }} className="group">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-serif font-bold text-stone-900 group-hover:underline">{p.company}</span>
+                      <SignalBadge direction={p.direction} />
+                    </div>
+                    <p className="font-body text-sm text-stone-600 line-clamp-2">{p.reasoning}</p>
+                  </Link>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+
+        {/* Col 3: Headlines */}
+        <div className="lg:pl-6 mt-6 lg:mt-0">
+          <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Headlines</h3>
+          <div className="h-px bg-stone-900 mb-4" />
+          <div className="space-y-4">
             {articles?.slice(0, 6).map((a) => (
-              <div key={a.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
-                <p className="text-sm font-medium text-gray-800 line-clamp-2">{a.title}</p>
-                <div className="flex items-center gap-2 mt-1.5 text-xs text-gray-400">
+              <div key={a.id} className="border-b border-stone-200 pb-3">
+                <p className="font-serif text-sm font-bold text-stone-900 leading-snug">{a.title}</p>
+                {a.summary && <p className="font-body text-xs text-stone-500 mt-1 line-clamp-2">{a.summary}</p>}
+                <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans">
                   {a.company && (
                     <Link
                       to="/companies/$symbol"
                       params={{ symbol: a.company }}
-                      className="text-emerald-600 font-medium hover:underline"
+                      className="font-semibold text-stone-700 hover:underline"
                     >
                       {a.company}
                     </Link>
@@ -183,7 +216,7 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        </section>
+        </div>
       </div>
     </div>
   );

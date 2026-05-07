@@ -13,13 +13,15 @@ export default function Signals() {
 
   return (
     <div className="space-y-8">
-      <h2 className="text-xl font-semibold text-gray-900">Signals</h2>
+      <div className="border-b-2 border-stone-900 pb-2">
+        <h2 className="font-serif text-2xl font-bold text-stone-900">Signal Desk</h2>
+      </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 font-sans">
         <button
           onClick={() => setActiveType(null)}
-          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-            !activeType ? "bg-emerald-600 text-white" : "bg-white border border-gray-200 text-gray-500 hover:text-gray-800"
+          className={`px-3 py-1.5 text-sm rounded transition-colors ${
+            !activeType ? "bg-stone-900 text-stone-50" : "bg-stone-100 text-stone-500 hover:text-stone-800"
           }`}
         >
           All
@@ -28,8 +30,8 @@ export default function Signals() {
           <button
             key={t}
             onClick={() => setActiveType(t)}
-            className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-              activeType === t ? "bg-emerald-600 text-white" : "bg-white border border-gray-200 text-gray-500 hover:text-gray-800"
+            className={`px-3 py-1.5 text-sm rounded transition-colors ${
+              activeType === t ? "bg-stone-900 text-stone-50" : "bg-stone-100 text-stone-500 hover:text-stone-800"
             }`}
           >
             {t}
@@ -38,27 +40,25 @@ export default function Signals() {
       </div>
 
       <section>
-        <h3 className="text-sm font-medium text-gray-500 mb-3">Signal Catalog</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Catalog</h3>
+        <div className="h-px bg-stone-900 mb-4" />
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {signals
             ?.filter((s) => !activeType || s.signal_type === activeType)
             .map((s) => (
-              <div key={s.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-medium text-gray-800">{s.name}</span>
+              <div key={s.id} className="border-b border-stone-200 pb-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-serif font-bold text-stone-900">{s.name}</span>
                   <SignalBadge direction={s.direction} />
                 </div>
-                <p className="text-xs text-gray-500 mb-3">{s.description}</p>
-                <div className="flex items-center gap-4 text-xs text-gray-400">
+                <p className="font-body text-xs text-stone-500 mb-3">{s.description}</p>
+                <div className="flex items-center gap-4 text-xs text-stone-400 font-sans">
                   <span>Accuracy: {(s.historical_accuracy * 100).toFixed(0)}%</span>
                   <span>Samples: {s.sample_size}</span>
                   <span>Matches: {s.match_count}</span>
                 </div>
-                <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-500 rounded-full"
-                    style={{ width: `${s.historical_accuracy * 100}%` }}
-                  />
+                <div className="mt-2 h-1 bg-stone-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-stone-700 rounded-full" style={{ width: `${s.historical_accuracy * 100}%` }} />
                 </div>
               </div>
             ))}
@@ -66,28 +66,29 @@ export default function Signals() {
       </section>
 
       <section>
-        <h3 className="text-sm font-medium text-gray-500 mb-3">Signal Weights</h3>
-        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-          <table className="w-full text-sm">
+        <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Weights</h3>
+        <div className="h-px bg-stone-900 mb-4" />
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm font-sans">
             <thead>
-              <tr className="text-left text-gray-500 border-b border-gray-200">
-                <th className="px-4 py-3 font-medium">Signal</th>
-                <th className="px-4 py-3 font-medium">Direction</th>
-                <th className="px-4 py-3 font-medium">Type</th>
-                <th className="px-4 py-3 text-right font-medium">Weight</th>
-                <th className="px-4 py-3 text-right font-medium">Samples</th>
+              <tr className="text-left text-stone-500 border-b-2 border-stone-900">
+                <th className="pb-2 pr-4 font-semibold text-xs uppercase tracking-wider">Signal</th>
+                <th className="pb-2 pr-4 font-semibold text-xs uppercase tracking-wider">Direction</th>
+                <th className="pb-2 pr-4 font-semibold text-xs uppercase tracking-wider">Type</th>
+                <th className="pb-2 pr-4 text-right font-semibold text-xs uppercase tracking-wider">Weight</th>
+                <th className="pb-2 text-right font-semibold text-xs uppercase tracking-wider">Samples</th>
               </tr>
             </thead>
             <tbody>
               {weights
                 ?.filter((w) => !activeType || w.signal_type === activeType)
                 .map((w) => (
-                  <tr key={`${w.signal}-${w.direction}`} className="border-b border-gray-100">
-                    <td className="px-4 py-3 text-gray-700">{w.signal}</td>
-                    <td className="px-4 py-3"><SignalBadge direction={w.direction} /></td>
-                    <td className="px-4 py-3 text-gray-500">{w.signal_type}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">{w.weight.toFixed(4)}</td>
-                    <td className="px-4 py-3 text-right text-gray-500">{w.sample_size}</td>
+                  <tr key={`${w.signal}-${w.direction}`} className="border-b border-stone-200">
+                    <td className="py-3 pr-4 text-stone-700">{w.signal}</td>
+                    <td className="py-3 pr-4"><SignalBadge direction={w.direction} /></td>
+                    <td className="py-3 pr-4 text-stone-500">{w.signal_type}</td>
+                    <td className="py-3 pr-4 text-right text-stone-700 tabular-nums">{w.weight.toFixed(4)}</td>
+                    <td className="py-3 text-right text-stone-500 tabular-nums">{w.sample_size}</td>
                   </tr>
                 ))}
             </tbody>
@@ -96,14 +97,15 @@ export default function Signals() {
       </section>
 
       <section>
-        <h3 className="text-sm font-medium text-gray-500 mb-3">Recent Matches</h3>
+        <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Recent Matches</h3>
+        <div className="h-px bg-stone-900 mb-4" />
         <div className="space-y-2">
           {matches?.map((m) => (
-            <div key={m.id} className="flex items-center gap-4 bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm shadow-sm">
-              <span className="text-gray-700 font-medium w-40">{m.signal}</span>
-              <span className="text-emerald-600 font-medium w-16">{m.company}</span>
+            <div key={m.id} className="flex items-center gap-4 border-b border-stone-200 pb-3 text-sm font-sans">
+              <span className="text-stone-700 font-medium w-40">{m.signal}</span>
+              <span className="font-serif font-bold text-stone-900 w-16">{m.company}</span>
               <SignalBadge direction={m.direction} confidence={m.confidence} />
-              <span className="text-gray-400 text-xs ml-auto">{new Date(m.detected_at).toLocaleString()}</span>
+              <span className="text-stone-400 text-xs ml-auto">{new Date(m.detected_at).toLocaleString()}</span>
             </div>
           ))}
         </div>

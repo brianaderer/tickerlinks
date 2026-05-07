@@ -7,6 +7,7 @@ import {
   HiOutlineChartBar,
   HiOutlineNewspaper,
   HiOutlineDocumentText,
+  HiOutlineChatBubbleLeftRight,
 } from "react-icons/hi2";
 
 const NAV = [
@@ -20,18 +21,20 @@ const NAV = [
 
 export default function Sidebar() {
   const open = useAppStore((s) => s.sidebarOpen);
+  const toggleChat = useAppStore((s) => s.toggleChat);
+  const chatOpen = useAppStore((s) => s.chatOpen);
   const location = useLocation();
 
   return (
     <aside
-      className={`fixed top-0 left-0 z-40 h-screen bg-stone-50 border-r border-stone-300 transition-all duration-200 ${open ? "w-56" : "w-16"}`}
+      className={`fixed top-0 left-0 z-40 h-screen bg-stone-50 border-r border-stone-300 transition-all duration-200 flex flex-col ${open ? "w-56" : "w-16"}`}
     >
-      <div className="flex items-center gap-2 px-4 h-14 border-b-2 border-stone-900">
+      <div className="flex items-center gap-2 px-4 h-14 border-b border-stone-200 mt-px">
         <span className="font-serif text-stone-900 font-black text-lg tracking-tight">TL</span>
         {open && <span className="font-serif text-stone-900 font-bold text-sm tracking-tight">TickerLinks</span>}
       </div>
 
-      <nav className="mt-4 flex flex-col gap-0.5 px-2">
+      <nav className="mt-4 flex flex-col gap-0.5 px-2 flex-1">
         {NAV.map(({ to, label, icon: Icon }) => {
           const active = location.pathname === to || (to !== "/" && location.pathname.startsWith(to));
           return (
@@ -50,6 +53,21 @@ export default function Sidebar() {
           );
         })}
       </nav>
+
+      {/* Linky chat toggle pinned to bottom */}
+      <div className="px-2 pb-4 border-t border-stone-200 pt-3">
+        <button
+          onClick={toggleChat}
+          className={`flex items-center gap-3 px-3 py-2 rounded text-sm font-sans transition-colors w-full ${
+            chatOpen
+              ? "bg-stone-900 text-stone-50 font-medium"
+              : "text-stone-600 hover:bg-stone-200 hover:text-stone-900"
+          }`}
+        >
+          <HiOutlineChatBubbleLeftRight className="w-5 h-5 shrink-0" />
+          {open && <span className="font-serif font-bold">Linky</span>}
+        </button>
+      </div>
     </aside>
   );
 }

@@ -8,15 +8,15 @@ export default function Predictions() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-gray-900">Predictions</h2>
-        <div className="flex gap-2">
+      <div className="flex items-center justify-between border-b-2 border-stone-900 pb-2">
+        <h2 className="font-serif text-2xl font-bold text-stone-900">Predictions</h2>
+        <div className="flex gap-2 font-sans">
           {["", "bullish", "bearish"].map((d) => (
             <button
               key={d}
               onClick={() => setDirFilter(d)}
-              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                dirFilter === d ? "bg-emerald-600 text-white" : "bg-white border border-gray-200 text-gray-500 hover:text-gray-800"
+              className={`px-3 py-1.5 text-sm rounded transition-colors ${
+                dirFilter === d ? "bg-stone-900 text-stone-50" : "bg-stone-100 text-stone-500 hover:text-stone-800"
               }`}
             >
               {d || "All"}
@@ -26,9 +26,9 @@ export default function Predictions() {
       </div>
 
       {isLoading ? (
-        <p className="text-gray-400">Loading...</p>
+        <p className="text-stone-400 font-sans">Loading...</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="columns-1 md:columns-2 xl:columns-3 gap-6 space-y-4">
           {predictions?.map((p) => <PredictionCard key={p.id} prediction={p} />)}
         </div>
       )}

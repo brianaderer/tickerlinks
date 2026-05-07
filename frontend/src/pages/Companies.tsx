@@ -10,12 +10,12 @@ export default function Companies() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-gray-900">Companies</h2>
+      <div className="flex items-center justify-between border-b-2 border-stone-900 pb-2">
+        <h2 className="font-serif text-2xl font-bold text-stone-900">Companies</h2>
         <select
           value={indexFilter}
           onChange={(e) => setIndexFilter(e.target.value)}
-          className="bg-white border border-gray-200 text-gray-700 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="bg-stone-50 border border-stone-300 text-stone-700 text-sm font-sans rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-stone-400"
         >
           <option value="">All Indexes</option>
           {indexes?.map((idx) => (
@@ -25,7 +25,7 @@ export default function Companies() {
       </div>
 
       {isLoading ? (
-        <p className="text-gray-400">Loading...</p>
+        <p className="text-stone-400 font-sans">Loading...</p>
       ) : companies ? (
         <CompanyTable companies={companies} />
       ) : null}
