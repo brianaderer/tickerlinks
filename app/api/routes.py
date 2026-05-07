@@ -425,11 +425,22 @@ def signal_weights():
 @bp.route("/signals/digests")
 def signal_digests():
     from sqlalchemy import func
-    latest_time = db.session.query(func.max(SignalDigest.generated_at)).scalar()
-    if not latest_time:
-        return jsonify([])
 
-    digests = SignalDigest.query.filter_by(generated_at=latest_time).all()
+    latest_subq = (
+        db.session.query(
+            SignalDigest.company_id,
+            func.max(SignalDigest.generated_at).label("max_gen"),
+        )
+        .group_by(SignalDigest.company_id)
+        .subquery()
+    )
+
+    digests = SignalDigest.query.join(
+        latest_subq,
+        (SignalDigest.company_id == latest_subq.c.company_id)
+        & (SignalDigest.generated_at == latest_subq.c.max_gen),
+    ).order_by(SignalDigest.net_confidence.desc()).limit(20).all()
+
     return jsonify([
         {
             "symbol": d.company.symbol,
