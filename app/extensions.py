@@ -13,8 +13,13 @@ def celery_init_app(app):
     celery.conf.result_backend = app.config["CELERY_RESULT_BACKEND"]
     celery.conf.include = [
         "app.tasks.fetch", "app.tasks.analyze", "app.tasks.backtest",
-        "app.tasks.articles", "app.tasks.report", "app.tasks.maintenance",
+        "app.tasks.articles", "app.tasks.report", "app.tasks.trends",
+        "app.tasks.maintenance",
     ]
+    celery.conf.task_default_queue = "celery"
+    celery.conf.task_routes = {
+        "app.tasks.maintenance.*": {"queue": "backfill"},
+    }
     celery.conf.beat_schedule = {
         "fetch-market-data": {
             "task": "app.tasks.fetch.fetch_market_data",

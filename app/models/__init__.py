@@ -11,10 +11,11 @@ from app.models.insider_trade import InsiderTrade
 from app.models.fundamentals import Fundamentals
 from app.models.report import Report
 from app.models.signal_digest import SignalDigest
+from app.models.trend import TrendSnapshot
 
 __all__ = [
     "Index", "company_index", "Company", "PriceHistory", "FeedSource",
     "NewsArticle", "article_companies", "Signal", "SignalMatch", "prediction_match",
     "Prediction", "Backtest", "InsiderTrade", "Fundamentals", "Report",
-    "SignalDigest",
+    "SignalDigest", "TrendSnapshot",
 ]

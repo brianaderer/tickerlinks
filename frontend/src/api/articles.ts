@@ -19,8 +19,10 @@ export function useSearchArticles(query: string) {
   return useQuery({
     queryKey: ["articleSearch", query],
     queryFn: () =>
-      apiFetch<NewsArticle[]>(`/articles/search?q=${encodeURIComponent(query)}`),
-    enabled: !!query,
+      apiFetch<NewsArticle[]>(`/articles/search/text?q=${encodeURIComponent(query)}&limit=20`),
+    enabled: query.length >= 2,
+    placeholderData: (prev) => prev,
+    staleTime: 30_000,
   });
 }
 
@@ -29,6 +31,14 @@ export function useArticle(id: number) {
     queryKey: ["article", id],
     queryFn: () => apiFetch<ArticleDetail>(`/articles/${id}`),
     enabled: !!id,
+  });
+}
+
+export function useArticlesByIds(ids: number[]) {
+  return useQuery({
+    queryKey: ["articlesBatch", ids],
+    queryFn: () => apiFetch<NewsArticle[]>(`/articles/batch?ids=${ids.join(",")}`),
+    enabled: ids.length > 0,
   });
 }
 

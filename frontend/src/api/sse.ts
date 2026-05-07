@@ -26,6 +26,10 @@ export function useSSE() {
       queryClient.invalidateQueries({ queryKey: ["signalMatches"] });
     });
 
+    es.addEventListener("trends:updated", () => {
+      queryClient.invalidateQueries({ queryKey: ["trends"] });
+    });
+
     es.addEventListener("news:article_processed", () => {
       queryClient.invalidateQueries({ queryKey: ["articles"] });
       queryClient.invalidateQueries({ queryKey: ["sentiment"] });

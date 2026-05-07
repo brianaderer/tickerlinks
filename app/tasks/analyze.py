@@ -23,4 +23,7 @@ def run_signal_analysis(company_ids: list[int] | None = None):
     from app.tasks.report import generate_report
     generate_report.delay()
 
+    from app.tasks.trends import generate_trends
+    generate_trends.delay()
+
     return result

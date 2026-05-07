@@ -4,8 +4,8 @@ import { useLatestReport } from "../api/reports";
 import { usePredictions } from "../api/predictions";
 import { useSignalDigests } from "../api/signals";
 import { useArticles, useSentiment } from "../api/articles";
+import { useTrends } from "../api/trends";
 import SignalBadge from "../components/SignalBadge";
-import AiGenerated from "../components/AiGenerated";
 import EmptyState from "../components/EmptyState";
 import { decodeHtml } from "../utils";
 
@@ -15,6 +15,8 @@ export default function Dashboard() {
   const { data: digests } = useSignalDigests();
   const { data: articles } = useArticles();
   const { data: sentiment } = useSentiment();
+  const { data: trendSnapshot } = useTrends();
+  const trends = trendSnapshot?.trends;
 
   const lead = predictions?.[0];
   const secondary = predictions?.slice(1, 3);
@@ -82,6 +84,42 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Trending */}
+      {trends && trends.length > 0 && (
+        <section className="py-6 border-t border-stone-300">
+          <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Trending</h3>
+          <div className="h-px bg-stone-900 mb-4" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {trends.slice(0, 6).map((t) => (
+              <div key={t.rank} className="border-b border-stone-200 pb-3">
+                <div className="flex items-start gap-2">
+                  <span className="font-sans text-xs font-bold text-stone-400 mt-0.5">{t.rank}</span>
+                  <div>
+                    <Link to="/trends/$rank" params={{ rank: String(t.rank) }} className="font-serif text-sm font-bold text-stone-900 leading-snug hover:underline cursor-pointer block">{t.headline}</Link>
+                    {t.impact && (
+                      <p className="font-body text-xs text-stone-500 mt-1 line-clamp-2">{t.impact}</p>
+                    )}
+                    <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans flex-wrap">
+                      {t.companies?.slice(0, 4).map((sym) => (
+                        <Link
+                          key={sym}
+                          to="/companies/$symbol"
+                          params={{ symbol: sym }}
+                          className="font-semibold text-stone-700 hover:underline cursor-pointer"
+                        >
+                          {sym}
+                        </Link>
+                      ))}
+                      <span>{t.first_seen === t.latest ? t.latest : `${t.first_seen} — ${t.latest}`}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Rule */}
       <div className="border-t border-stone-300 my-2" />
 
@@ -127,9 +165,7 @@ export default function Dashboard() {
                     </Link>
                     <SignalBadge direction={d.direction} confidence={d.net_confidence} />
                   </div>
-                  <AiGenerated label="AI digest" className="mt-1">
-                    <p className="font-body text-sm text-stone-600">{d.digest}</p>
-                  </AiGenerated>
+                  <p className="font-body text-sm text-stone-600 mt-1">{d.digest}</p>
                   <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans">
                     <span>{d.match_count} signal{d.match_count !== 1 ? "s" : ""}</span>
                     <span>&bull;</span>

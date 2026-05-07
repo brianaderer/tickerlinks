@@ -5,7 +5,7 @@ from app.extensions import db
 from app.models import (
     Company, PriceHistory, FeedSource, NewsArticle, Index,
     Signal, SignalMatch, Prediction, Report, SignalDigest,
-    article_companies,
+    TrendSnapshot, article_companies,
 )
 from app.articles.processor import search_articles, get_sentiment_index
 from app.articles.indices import all_indices
@@ -167,6 +167,33 @@ def get_article(article_id):
         "published_at": a.published_at.isoformat() if a.published_at else None,
         "fetched_at": a.fetched_at.isoformat() if a.fetched_at else None,
     })
+
+
+@bp.route("/articles/batch")
+def batch_articles():
+    ids_param = request.args.get("ids", "")
+    if not ids_param:
+        return jsonify([])
+    try:
+        ids = [int(x) for x in ids_param.split(",") if x.strip()]
+    except ValueError:
+        return jsonify([])
+
+    articles = NewsArticle.query.filter(NewsArticle.id.in_(ids)).order_by(
+        NewsArticle.published_at.desc()
+    ).all()
+    return jsonify([
+        {
+            "id": a.id,
+            "title": a.title,
+            "summary": a.summary[:200] if a.summary else None,
+            "url": a.url,
+            "source_name": a.source_name,
+            "companies": _article_companies(a.id),
+            "published_at": a.published_at.isoformat() if a.published_at else None,
+        }
+        for a in articles
+    ])
 
 
 @bp.route("/signals")
@@ -393,6 +420,17 @@ def signal_digests():
         }
         for d in digests
     ])
+
+
+@bp.route("/trends")
+def get_trends():
+    snapshot = TrendSnapshot.query.order_by(TrendSnapshot.generated_at.desc()).first()
+    if not snapshot:
+        return jsonify({"generated_at": None, "trends": []})
+    return jsonify({
+        "generated_at": snapshot.generated_at.isoformat(),
+        "trends": snapshot.trends or [],
+    })
 
 
 @bp.route("/reports")

@@ -12,6 +12,7 @@ import Signals from "./pages/Signals";
 import Predictions from "./pages/Predictions";
 import Articles from "./pages/Articles";
 import ArticleReader from "./pages/ArticleReader";
+import TrendDetail from "./pages/TrendDetail";
 import Reports from "./pages/Reports";
 
 const rootRoute = createRootRoute({ component: Layout });
@@ -58,6 +59,12 @@ const articleReaderRoute = createRoute({
   component: ArticleReader,
 });
 
+const trendDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/trends/$rank",
+  component: TrendDetail,
+});
+
 const reportsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/reports",
@@ -72,6 +79,7 @@ const routeTree = rootRoute.addChildren([
   predictionsRoute,
   articlesRoute,
   articleReaderRoute,
+  trendDetailRoute,
   reportsRoute,
 ]);
 

@@ -7,6 +7,8 @@ from app.signals.state import EngineState
 logger = logging.getLogger(__name__)
 
 DEFAULT_WEIGHT = 0.5
+MIN_SIGNAL_TYPES = 2
+MIN_WEIGHTED_SCORE = 1.5
 
 
 def aggregate_node(state: EngineState) -> EngineState:
@@ -39,6 +41,12 @@ def aggregate_node(state: EngineState) -> EngineState:
         total_score = bullish_score + bearish_score
 
         if total_score == 0:
+            continue
+
+        signal_types = set(s["signal_type"] for s in company_signals)
+        if len(signal_types) < MIN_SIGNAL_TYPES:
+            continue
+        if total_score < MIN_WEIGHTED_SCORE:
             continue
 
         if bullish_score > bearish_score:

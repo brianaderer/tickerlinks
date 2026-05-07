@@ -89,6 +89,22 @@ export interface SignalWeight {
   snapshots: number;
 }
 
+export interface Trend {
+  rank: number;
+  headline: string;
+  impact: string;
+  top_tags: string[];
+  article_ids: number[];
+  companies: string[];
+  first_seen: string;
+  latest: string;
+}
+
+export interface TrendSnapshot {
+  generated_at: string | null;
+  trends: Trend[];
+}
+
 export interface SignalDigest {
   symbol: string;
   direction: string;
