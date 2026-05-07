@@ -10,19 +10,18 @@ export function useSSE() {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const retryCount = useRef(0);
   const ready = useRef(false);
+  const lastEventId = useRef("$");
 
   const connect = useCallback(() => {
     if (esRef.current && esRef.current.readyState !== EventSource.CLOSED) return;
 
-    // Connect with $, which means "only new events from now on" -- skip the Redis replay buffer
-    const es = new EventSource(`${API_URL}/stream?last_id=$`);
+    const es = new EventSource(`${API_URL}/stream?last_id=${encodeURIComponent(lastEventId.current)}`);
     esRef.current = es;
     ready.current = false;
 
     es.onopen = () => {
       retryCount.current = 0;
       useAppStore.getState().setSSEConnected(true);
-      // Small delay to skip any burst of buffered events that arrive right after open
       setTimeout(() => { ready.current = true; }, 500);
     };
 
@@ -36,6 +35,8 @@ export function useSSE() {
       reconnectTimer.current = setTimeout(connect, delay);
     };
 
+    const trackId = (e: MessageEvent) => { if (e.lastEventId) lastEventId.current = e.lastEventId; };
+
     // -- Data-carrying events: update cache directly, no refetch --
 
     // news:article_processed is ignored -- the backend fires this for every article
@@ -43,6 +44,7 @@ export function useSSE() {
     // Headlines are hydrated once via fetch; only brand-new RSS arrivals update them.
 
     es.addEventListener("news:article_arrived", (e: MessageEvent) => {
+      trackId(e);
       if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
@@ -59,6 +61,7 @@ export function useSSE() {
     });
 
     es.addEventListener("signals:analysis_started", (e: MessageEvent) => {
+      trackId(e);
       if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
@@ -69,6 +72,7 @@ export function useSSE() {
     });
 
     es.addEventListener("signals:analysis_complete", (e: MessageEvent) => {
+      trackId(e);
       if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
@@ -90,6 +94,7 @@ export function useSSE() {
     });
 
     es.addEventListener("signals:ticker_digest", (e: MessageEvent) => {
+      trackId(e);
       if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
@@ -106,6 +111,7 @@ export function useSSE() {
     });
 
     es.addEventListener("prices:update", (e: MessageEvent) => {
+      trackId(e);
       if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
@@ -127,6 +133,7 @@ export function useSSE() {
     });
 
     es.addEventListener("chat:tool_call", (e: MessageEvent) => {
+      trackId(e);
       if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
