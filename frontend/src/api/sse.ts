@@ -10,12 +10,14 @@ export function useSSE() {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const retryCount = useRef(0);
   const ready = useRef(false);
-  const lastEventId = useRef("$");
+
+  const getLastId = () => sessionStorage.getItem("sse:lastEventId") || "$";
+  const setLastId = (id: string) => sessionStorage.setItem("sse:lastEventId", id);
 
   const connect = useCallback(() => {
     if (esRef.current && esRef.current.readyState !== EventSource.CLOSED) return;
 
-    const es = new EventSource(`${API_URL}/stream?last_id=${encodeURIComponent(lastEventId.current)}`);
+    const es = new EventSource(`${API_URL}/stream?last_id=${encodeURIComponent(getLastId())}`);
     esRef.current = es;
     ready.current = false;
 
@@ -35,7 +37,7 @@ export function useSSE() {
       reconnectTimer.current = setTimeout(connect, delay);
     };
 
-    const trackId = (e: MessageEvent) => { if (e.lastEventId) lastEventId.current = e.lastEventId; };
+    const trackId = (e: MessageEvent) => { if (e.lastEventId) setLastId(e.lastEventId); };
 
     // -- Data-carrying events: update cache directly, no refetch --
 

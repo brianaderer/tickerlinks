@@ -42,7 +42,7 @@ export const useAppStore = create<AppState>((set) => ({
   chatStreaming: false,
   chatToolStatus: null,
   sseConnected: false,
-  pendingPredictions: new Set(),
+  pendingPredictions: new Set(JSON.parse(sessionStorage.getItem("pendingPredictions") || "[]")),
   chatMessages: [
     {
       id: "welcome",
@@ -65,11 +65,16 @@ export const useAppStore = create<AppState>((set) => ({
     set({ chatStreaming: streaming, chatToolStatus: streaming ? null : null }),
   setChatToolStatus: (tool) => set({ chatToolStatus: tool }),
   addPendingPrediction: (symbol) =>
-    set((s) => ({ pendingPredictions: new Set([...s.pendingPredictions, symbol]) })),
+    set((s) => {
+      const next = new Set([...s.pendingPredictions, symbol]);
+      sessionStorage.setItem("pendingPredictions", JSON.stringify([...next]));
+      return { pendingPredictions: next };
+    }),
   removePendingPrediction: (symbol) =>
     set((s) => {
       const next = new Set(s.pendingPredictions);
       next.delete(symbol);
+      sessionStorage.setItem("pendingPredictions", JSON.stringify([...next]));
       return { pendingPredictions: next };
     }),
 }));
