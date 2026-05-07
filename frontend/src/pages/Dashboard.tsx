@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import ReactMarkdown from "react-markdown";
+import LinkedMarkdown from "../components/LinkedMarkdown";
 import { useLatestReport } from "../api/reports";
 import { usePredictions } from "../api/predictions";
 import { useSignalDigests } from "../api/signals";
@@ -75,6 +75,44 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* Trending Topics */}
+      <section className="py-6 border-t border-stone-300">
+        <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Trending Topics</h3>
+        <div className="h-px bg-stone-900 mb-4" />
+        {(!trends || trends.length === 0) ? (
+          <EmptyState message="No trending topics yet. Topics appear after the trend analysis agent processes article data." />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {trends.slice(0, 6).map((t) => (
+              <div key={t.rank} className="border-b border-stone-200 pb-3">
+                <div className="flex items-start gap-2">
+                  <span className="font-sans text-xs font-bold text-stone-400 mt-0.5">{t.rank}</span>
+                  <div>
+                    <Link to="/trends/$rank" params={{ rank: String(t.rank) }} className="font-serif text-sm font-bold text-stone-900 leading-snug hover:underline cursor-pointer block">{t.headline}</Link>
+                    {t.impact && (
+                      <p className="font-body text-xs text-stone-500 mt-1 line-clamp-2">{t.impact}</p>
+                    )}
+                    <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans flex-wrap">
+                      {t.companies?.slice(0, 4).map((sym) => (
+                        <Link
+                          key={sym}
+                          to="/companies/$symbol"
+                          params={{ symbol: sym }}
+                          className="font-semibold text-stone-700 hover:underline cursor-pointer"
+                        >
+                          {sym}
+                        </Link>
+                      ))}
+                      <span>{t.first_seen === t.latest ? t.latest : `${t.first_seen} — ${t.latest}`}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       {/* Predictions */}
       {predictions && predictions.length > 0 && (
         <section className="py-6 border-t border-stone-300">
@@ -105,42 +143,6 @@ export default function Dashboard() {
         </section>
       )}
 
-      {/* Trending */}
-      {trends && trends.length > 0 && (
-        <section className="py-6 border-t border-stone-300">
-          <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Trending</h3>
-          <div className="h-px bg-stone-900 mb-4" />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {trends.slice(0, 6).map((t) => (
-              <div key={t.rank} className="border-b border-stone-200 pb-3">
-                <div className="flex items-start gap-2">
-                  <span className="font-sans text-xs font-bold text-stone-400 mt-0.5">{t.rank}</span>
-                  <div>
-                    <Link to="/trends/$rank" params={{ rank: String(t.rank) }} className="font-serif text-sm font-bold text-stone-900 leading-snug hover:underline cursor-pointer block">{t.headline}</Link>
-                    {t.impact && (
-                      <p className="font-body text-xs text-stone-500 mt-1 line-clamp-2">{t.impact}</p>
-                    )}
-                    <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans flex-wrap">
-                      {t.companies?.slice(0, 4).map((sym) => (
-                        <Link
-                          key={sym}
-                          to="/companies/$symbol"
-                          params={{ symbol: sym }}
-                          className="font-semibold text-stone-700 hover:underline cursor-pointer"
-                        >
-                          {sym}
-                        </Link>
-                      ))}
-                      <span>{t.first_seen === t.latest ? t.latest : `${t.first_seen} — ${t.latest}`}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
       {/* Rule */}
       <div className="border-t border-stone-300 my-2" />
 
@@ -158,9 +160,7 @@ export default function Dashboard() {
           <p className="text-xs font-sans text-stone-400 mb-3">
             Updated {new Date(report.generated_at).toLocaleString()}
           </p>
-          <div className="font-body text-sm text-stone-700 leading-relaxed prose prose-stone prose-sm max-w-none">
-            <ReactMarkdown>{report.summary}</ReactMarkdown>
-          </div>
+          <LinkedMarkdown>{report.summary}</LinkedMarkdown>
         </section>
       )}
 
@@ -244,7 +244,10 @@ export default function Dashboard() {
             <EmptyState message="No articles yet. Headlines appear once RSS feeds are polled." />
           ) : (
             <div className="space-y-4">
-              {articles.slice(4, 10).map((a) => (
+              {[...articles].sort((a, b) =>
+                new Date(b.published_at || b.fetched_at || 0).getTime() -
+                new Date(a.published_at || a.fetched_at || 0).getTime()
+              ).slice(0, 10).map((a) => (
               <div key={a.id} className="border-b border-stone-200 pb-3">
                 <Link to="/articles/$articleId" params={{ articleId: String(a.id) }} className="font-serif text-sm font-bold text-stone-900 leading-snug hover:underline cursor-pointer block">{decodeHtml(a.title)}</Link>
                 {a.summary && (

@@ -15,14 +15,12 @@ logger = logging.getLogger(__name__)
 
 MIN_MATCHES_FOR_DIGEST = 2
 
-DIGEST_PROMPT = """You are a concise market signal analyst. Given the following signal matches for {symbol} ({company_name}), synthesize a 1-2 sentence digest that weighs the signals against each other and gives a net assessment.
+DIGEST_PROMPT = """Given these signals for {symbol} ({company_name}), write a 1-2 sentence digest.
 
-Signals detected:
-{signals_text}
+Signals: {signals_text}
+Net: {direction} at {confidence:.0%} confidence
 
-Net direction from aggregation: {direction} at {confidence:.0%} confidence
-
-Write a crisp 1-2 sentence digest. No preamble, no bullet points — just the assessment."""
+Reply with ONLY the 1-2 sentence digest. No thinking, no preamble, no bullet points. /no_think"""
 
 
 MAX_DIGESTS = 20
@@ -60,8 +58,10 @@ def digest_node(state: EngineState) -> EngineState:
         direction = pred.get("direction", _infer_direction(signals))
         confidence = pred.get("confidence", 0.5)
 
+        confidence = float(confidence)
+
         signals_text = "\n".join(
-            f"- {s['signal_name']} ({s['direction']}, {s['confidence']:.0%})"
+            f"- {s['signal_name']} ({s['direction']}, {float(s['confidence']):.0%})"
             for s in signals
         )
 
@@ -85,7 +85,7 @@ def digest_node(state: EngineState) -> EngineState:
         digest = SignalDigest(
             company_id=company_id,
             direction=direction,
-            net_confidence=round(confidence, 4),
+            net_confidence=round(float(confidence), 4),
             match_count=len(signals),
             digest=digest_text,
             matches=match_names,
@@ -97,7 +97,7 @@ def digest_node(state: EngineState) -> EngineState:
         sse_publish("signals", "ticker_digest", {
             "symbol": company.symbol,
             "direction": direction,
-            "net_confidence": round(confidence, 4),
+            "net_confidence": round(float(confidence), 4),
             "match_count": len(signals),
             "digest": digest_text,
             "matches": match_names,
@@ -117,7 +117,7 @@ def _get_llm() -> ChatOpenAI | None:
         openai_api_key=api_key,
         openai_api_base=os.environ.get("LLM_API_BASE", "https://api.deepinfra.com/v1/openai"),
         temperature=0.3,
-        max_tokens=200,
+        max_tokens=300,
     )
 
 
@@ -135,10 +135,10 @@ def _rank_companies(by_company: dict, limit: int) -> list[tuple[int, list]]:
 
 def _clean_response(text: str) -> str:
     text = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
-    if "<think>" in text:
+    if "</think>" in text:
         text = text.split("</think>")[-1].strip()
-    if text.startswith("<think>"):
-        text = ""
+    if "<think>" in text:
+        text = text.replace("<think>", "").strip()
     return text
 
 
