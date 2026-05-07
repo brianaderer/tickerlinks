@@ -112,5 +112,33 @@ def backfill_all():
     companies = Company.query.filter_by(active=True).all()
     logger.info("Queuing backfill for %d companies", len(companies))
     for c in companies:
-        backfill_company.delay(c.id)
+        backfill_company.apply_async(args=[c.id], queue="backfill")
     return {"queued": len(companies)}
+
+
+@celery.task(name="app.tasks.maintenance.reprocess_articles")
+def reprocess_articles():
+    from app.models import NewsArticle
+    from app.tasks.articles import process_article
+
+    unprocessed = NewsArticle.query.filter_by(processed=False).all()
+    logger.info("Queuing %d articles for reprocessing on backfill queue", len(unprocessed))
+    for a in unprocessed:
+        process_article.apply_async(args=[a.id], queue="backfill")
+    return {"queued": len(unprocessed)}
+
+
+@celery.task(name="app.tasks.maintenance.reset_and_reprocess_articles")
+def reset_and_reprocess_articles():
+    from app.models import NewsArticle
+    from app.tasks.articles import process_article
+
+    count = NewsArticle.query.update({"processed": False})
+    db.session.commit()
+    logger.info("Reset %d articles to unprocessed", count)
+
+    articles = NewsArticle.query.all()
+    for a in articles:
+        process_article.apply_async(args=[a.id], queue="backfill")
+    logger.info("Queued %d articles on backfill queue", len(articles))
+    return {"reset": count, "queued": len(articles)}

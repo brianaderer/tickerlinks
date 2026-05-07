@@ -1,4 +1,5 @@
-import { Outlet } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { Outlet, useRouterState } from "@tanstack/react-router";
 import Sidebar from "./Sidebar";
 import ChatDrawer from "./ChatDrawer";
 import { useAppStore } from "../store";
@@ -7,8 +8,14 @@ import { useSSE } from "../api/sse";
 
 export default function Layout() {
   useSSE();
+  const location = useRouterState({ select: (s) => s.location });
+  const setPageContext = useAppStore((s) => s.setPageContext);
+  useEffect(() => {
+    setPageContext(location.pathname);
+  }, [location.pathname, setPageContext]);
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
+  const sseConnected = useAppStore((s) => s.sseConnected);
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -29,7 +36,10 @@ export default function Layout() {
             <div className="text-center">
               <h1 className="font-serif font-black text-2xl tracking-tight text-stone-900">TickerLinks</h1>
             </div>
-            <span className="text-xs text-stone-400 font-sans">{today}</span>
+            <div className="flex items-center gap-3">
+              <span className={`w-1.5 h-1.5 rounded-full ${sseConnected ? "bg-emerald-500" : "bg-red-500"}`} title={sseConnected ? "Live" : "Disconnected"} />
+              <span className="text-xs text-stone-400 font-sans">{today}</span>
+            </div>
           </div>
           <div className="mx-6">
             <div className="h-px bg-stone-900" />

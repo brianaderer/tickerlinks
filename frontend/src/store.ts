@@ -13,19 +13,33 @@ interface AppState {
   activeSignalType: string | null;
   chatOpen: boolean;
   chatMessages: ChatMessage[];
+  chatStreaming: boolean;
+  chatTokenBuffer: string;
+  pageContext: string;
+  sseConnected: boolean;
+
   setSelectedSymbol: (symbol: string | null) => void;
   toggleSidebar: () => void;
   setActiveSignalType: (type: string | null) => void;
   toggleChat: () => void;
   setChatOpen: (open: boolean) => void;
   addChatMessage: (msg: ChatMessage) => void;
+  setPageContext: (ctx: string) => void;
+  setSSEConnected: (connected: boolean) => void;
+  setChatStreaming: (streaming: boolean) => void;
+  appendChatToken: (token: string) => void;
+  finalizeChatMessage: (fullText: string) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   selectedSymbol: null,
   sidebarOpen: true,
   activeSignalType: null,
+  pageContext: "Dashboard",
   chatOpen: false,
+  chatStreaming: false,
+  chatTokenBuffer: "",
+  sseConnected: false,
   chatMessages: [
     {
       id: "welcome",
@@ -42,4 +56,24 @@ export const useAppStore = create<AppState>((set) => ({
   setChatOpen: (open) => set({ chatOpen: open }),
   addChatMessage: (msg) =>
     set((s) => ({ chatMessages: [...s.chatMessages, msg] })),
+  setPageContext: (ctx) => set({ pageContext: ctx }),
+  setSSEConnected: (connected) => set({ sseConnected: connected }),
+  setChatStreaming: (streaming) =>
+    set({ chatStreaming: streaming, chatTokenBuffer: streaming ? "" : "" }),
+  appendChatToken: (token) =>
+    set((s) => ({ chatTokenBuffer: s.chatTokenBuffer + token })),
+  finalizeChatMessage: (fullText) =>
+    set((s) => ({
+      chatStreaming: false,
+      chatTokenBuffer: "",
+      chatMessages: [
+        ...s.chatMessages,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: fullText,
+          timestamp: new Date(),
+        },
+      ],
+    })),
 }));

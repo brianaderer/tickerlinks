@@ -1,47 +1,82 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { API_URL } from "./client";
+import { useAppStore } from "../store";
+
+const EVENT_TO_QUERIES: Record<string, string[][]> = {
+  "signals:analysis_complete": [["predictions"], ["signalMatches"], ["signalDigests"], ["latestReport"]],
+  "signals:match_fired":       [["signalMatches"]],
+  "signals:ticker_digest":     [["signalDigests"]],
+  "prices:update":             [["prices"]],
+  "news:article_arrived":      [["articles"]],
+  "news:article_processed":    [["articles"], ["articleSearch"], ["sentiment"]],
+  "reports:generated":         [["reports"], ["latestReport"]],
+  "trends:updated":            [["trends"]],
+};
 
 export function useSSE() {
   const queryClient = useQueryClient();
+  const esRef = useRef<EventSource | null>(null);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    const es = new EventSource(`${API_URL}/stream`);
+    let unmounted = false;
 
-    es.addEventListener("reports:generated", () => {
-      queryClient.invalidateQueries({ queryKey: ["latestReport"] });
-      queryClient.invalidateQueries({ queryKey: ["reports"] });
-    });
+    function connect() {
+      if (unmounted) return;
 
-    es.addEventListener("signals:ticker_digest", () => {
-      queryClient.invalidateQueries({ queryKey: ["signalDigests"] });
-    });
+      const es = new EventSource(`${API_URL}/stream`);
+      esRef.current = es;
 
-    es.addEventListener("signals:analysis_complete", () => {
-      queryClient.invalidateQueries({ queryKey: ["predictions"] });
-      queryClient.invalidateQueries({ queryKey: ["signalMatches"] });
-    });
+      es.onopen = () => useAppStore.getState().setSSEConnected(true);
 
-    es.addEventListener("signals:match_fired", () => {
-      queryClient.invalidateQueries({ queryKey: ["signalMatches"] });
-    });
+      es.onerror = () => {
+        useAppStore.getState().setSSEConnected(false);
+        es.close();
+        esRef.current = null;
+        if (!unmounted) {
+          reconnectTimer.current = setTimeout(connect, 3000);
+        }
+      };
 
-    es.addEventListener("trends:updated", () => {
-      queryClient.invalidateQueries({ queryKey: ["trends"] });
-    });
+      for (const eventType of Object.keys(EVENT_TO_QUERIES)) {
+        es.addEventListener(eventType, () => {
+          for (const key of EVENT_TO_QUERIES[eventType]) {
+            queryClient.invalidateQueries({ queryKey: key });
+          }
+        });
+      }
 
-    es.addEventListener("news:article_processed", () => {
-      queryClient.invalidateQueries({ queryKey: ["articles"] });
-      queryClient.invalidateQueries({ queryKey: ["sentiment"] });
-    });
+      es.addEventListener("chat:thinking", () => {
+        useAppStore.getState().setChatStreaming(true);
+      });
 
-    es.onerror = () => {
-      es.close();
-      setTimeout(() => {
-        // Reconnect handled by component re-mount or next render
-      }, 5000);
+      es.addEventListener("chat:token", (e: MessageEvent) => {
+        try {
+          useAppStore.getState().appendChatToken(JSON.parse(e.data).text);
+        } catch { /* ignore */ }
+      });
+
+      es.addEventListener("chat:done", (e: MessageEvent) => {
+        try {
+          useAppStore.getState().finalizeChatMessage(JSON.parse(e.data).text);
+        } catch { /* ignore */ }
+      });
+
+      es.addEventListener("chat:error", (e: MessageEvent) => {
+        try {
+          useAppStore.getState().finalizeChatMessage(`Error: ${JSON.parse(e.data).error}`);
+        } catch { /* ignore */ }
+      });
+    }
+
+    connect();
+
+    return () => {
+      unmounted = true;
+      clearTimeout(reconnectTimer.current);
+      esRef.current?.close();
+      esRef.current = null;
     };
-
-    return () => es.close();
   }, [queryClient]);
 }

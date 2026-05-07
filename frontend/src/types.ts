@@ -48,6 +48,7 @@ export interface NewsArticle {
   source_name: string;
   companies: ArticleCompany[];
   published_at: string | null;
+  fetched_at: string | null;
 }
 
 export interface ArticleDetail extends NewsArticle {

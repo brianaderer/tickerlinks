@@ -1,26 +1,42 @@
-import json
+import logging
 import os
 import re
+from datetime import datetime, timezone
 
 from flask import Blueprint, request, jsonify
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
 from app.sse.publisher import sse_publish
+from app.api.linky_tools import LINKY_TOOLS
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("chat", __name__)
 
-SYSTEM_PROMPT = """You are Linky, a concise market intelligence assistant for StockLynx.
-You have access to real-time signal data, price movements, article sentiment, and predictions.
-Answer questions about tickers, signals, predictions, and market conditions.
-Be direct, cite specific data points when available, and keep responses under 4 sentences unless more detail is requested.
-Strip any <think> tags from your output — respond only with the final answer."""
+SYSTEM_PROMPT = """You are Linky, the AI market intelligence assistant for StockLynx. Today is {today}.
+
+The user is currently viewing: {page_context}
+
+You have tools to look up company profiles (fundamentals, signals, predictions, price action), search articles in the database, check trending topics, read the latest market brief, and review the signal accuracy rubric. Use them to give specific, data-backed answers.
+
+RULES:
+- Be conversational but precise — cite tickers, numbers, and dates
+- Keep responses focused unless the user asks for depth
+- If the user is on a company page, you already know which ticker they're looking at
+- Use tools proactively — don't guess when you can look up real data
+- Never fabricate data points — if a tool returns nothing, say so
+- Do NOT wrap output in <think> tags or any XML"""
+
+MAX_TOOL_CALLS = 5
 
 
 @bp.route("/chat", methods=["POST"])
 def chat():
     body = request.get_json(force=True)
     messages = body.get("messages", [])
+    page_context = body.get("page_context", "Unknown page")
+
     if not messages:
         return jsonify({"error": "No messages provided"}), 400
 
@@ -28,57 +44,20 @@ def chat():
     if not api_key:
         return jsonify({"error": "LLM not configured"}), 503
 
-    lc_messages = _build_context(messages)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     llm = ChatOpenAI(
-        model=os.environ.get("LLM_MODEL", "Qwen/Qwen3-14B"),
+        model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
         openai_api_key=api_key,
         openai_api_base=os.environ.get("LLM_API_BASE", "https://api.deepinfra.com/v1/openai"),
         temperature=0.4,
-        max_tokens=800,
-        streaming=True,
+        max_tokens=1500,
     )
+    llm_with_tools = llm.bind_tools(LINKY_TOOLS)
 
-    sse_publish("chat", "thinking", {})
-
-    try:
-        full_text = ""
-        inside_think = False
-
-        for chunk in llm.stream(lc_messages):
-            token = chunk.content
-            if not token:
-                continue
-
-            if "<think>" in token:
-                inside_think = True
-                token = token.split("<think>")[0]
-            if "</think>" in token:
-                inside_think = False
-                token = token.split("</think>")[-1]
-            if inside_think:
-                continue
-            if not token:
-                continue
-
-            full_text += token
-            sse_publish("chat", "token", {"text": token})
-
-        full_text = re.sub(r"<think>.*?</think>", "", full_text, flags=re.DOTALL).strip()
-        sse_publish("chat", "done", {"text": full_text})
-
-        return jsonify({"response": full_text})
-
-    except Exception as e:
-        sse_publish("chat", "error", {"error": str(e)})
-        return jsonify({"error": str(e)}), 502
-
-
-def _build_context(messages: list[dict]) -> list:
-    lc_messages = [SystemMessage(content=SYSTEM_PROMPT)]
-
-    _inject_data_context(lc_messages)
-
+    lc_messages = [
+        SystemMessage(content=SYSTEM_PROMPT.format(today=today, page_context=page_context)),
+    ]
     for msg in messages[-10:]:
         role = msg.get("role", "user")
         content = msg.get("content", "")
@@ -87,45 +66,50 @@ def _build_context(messages: list[dict]) -> list:
         elif role == "assistant":
             lc_messages.append(AIMessage(content=content))
 
-    return lc_messages
-
-
-def _inject_data_context(lc_messages: list):
-    from app.models import Signal, SignalMatch, Prediction, Report
-    from app.articles.indices import all_indices
+    sse_publish("chat", "thinking", {})
 
     try:
-        matches = SignalMatch.query.order_by(SignalMatch.detected_at.desc()).limit(10).all()
-        if matches:
-            sig_text = "Recent signal matches:\n"
-            for m in matches:
-                sig_text += f"- {m.signal.name} on {m.company.symbol} ({m.direction}, {m.confidence:.0%}) at {m.detected_at.strftime('%Y-%m-%d %H:%M')}\n"
-            lc_messages.append(SystemMessage(content=sig_text))
+        tool_map = {t.name: t for t in LINKY_TOOLS}
+        tool_calls_made = 0
 
-        preds = Prediction.query.order_by(Prediction.created_at.desc()).limit(5).all()
-        if preds:
-            pred_text = "Latest predictions:\n"
-            for p in preds:
-                pred_text += f"- {p.company.symbol}: {p.direction} ({p.confidence:.0%})\n"
-            lc_messages.append(SystemMessage(content=pred_text))
+        for _ in range(MAX_TOOL_CALLS + 1):
+            response = llm_with_tools.invoke(lc_messages)
 
-        weights = Signal.query.filter_by(active=True).all()
-        if weights:
-            w_text = "Signal weights (operative accuracy):\n"
-            for s in weights:
-                w_text += f"- {s.name} ({s.direction}): {s.operative_accuracy:.2%}\n"
-            lc_messages.append(SystemMessage(content=w_text))
+            if not response.tool_calls or tool_calls_made >= MAX_TOOL_CALLS:
+                break
 
-        report = Report.query.order_by(Report.generated_at.desc()).first()
-        if report and report.summary:
-            lc_messages.append(SystemMessage(content=f"Latest report summary:\n{report.summary[:500]}"))
+            lc_messages.append(response)
+            for tc in response.tool_calls:
+                if tool_calls_made >= MAX_TOOL_CALLS:
+                    lc_messages.append(ToolMessage(
+                        content="Tool call limit reached.",
+                        tool_call_id=tc["id"],
+                    ))
+                    continue
 
-        indices = all_indices()
-        if indices:
-            idx_text = "Article indices snapshot:\n"
-            for key, val in indices.items():
-                if isinstance(val, dict):
-                    idx_text += f"- {key}: {json.dumps(val)[:200]}\n"
-            lc_messages.append(SystemMessage(content=idx_text[:800]))
-    except Exception:
-        pass
+                tool_name = tc["name"]
+                tool_fn = tool_map.get(tool_name)
+                if not tool_fn:
+                    lc_messages.append(ToolMessage(
+                        content=f"Unknown tool: {tool_name}",
+                        tool_call_id=tc["id"],
+                    ))
+                    continue
+
+                logger.info("Linky tool call: %s(%s)", tool_name, tc["args"])
+                sse_publish("chat", "tool_call", {"tool": tool_name, "args": tc["args"]})
+
+                result = tool_fn.invoke(tc["args"])
+                lc_messages.append(ToolMessage(content=result, tool_call_id=tc["id"]))
+                tool_calls_made += 1
+
+        text = response.content or ""
+        text = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+
+        sse_publish("chat", "done", {"text": text})
+        return jsonify({"response": text})
+
+    except Exception as e:
+        logger.exception("Linky chat failed")
+        sse_publish("chat", "error", {"error": str(e)})
+        return jsonify({"error": str(e)}), 502

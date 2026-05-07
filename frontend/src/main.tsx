@@ -7,7 +7,10 @@ import "./index.css";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
+      staleTime: Infinity,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchInterval: false,
       retry: 1,
     },
   },
@@ -20,3 +23,5 @@ createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </StrictMode>,
 );
+
+export { queryClient };

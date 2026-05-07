@@ -1,30 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import { useAppStore } from "../store";
 import type { ChatMessage } from "../store";
+import { API_URL } from "../api/client";
 import { HiOutlineXMark, HiOutlinePaperAirplane } from "react-icons/hi2";
-
-const STUB_RESPONSES = [
-  "AAPL is showing a bullish convergence right now -- RSI reversal plus a sentiment surge from positive services revenue coverage. Confidence is at 82%.",
-  "Looking at the signal weights, the RSI Oversold detector has the highest accuracy at 72% across 340 samples. It's been reliable.",
-  "GOOGL is under pressure. Negative sentiment from the EU antitrust probe is dragging the score to -0.35. Two bearish signals active.",
-  "The latest hourly report flagged 6 new signal matches -- 4 bullish, 2 bearish. AAPL and MSFT are driving most of the activity.",
-  "JPM had a MACD crossover detected at 65% confidence. Modest signal, but the dividend news adds a positive fundamental backdrop.",
-  "Across the watchlist, sentiment is net positive. Only GOOGL and XOM are in negative territory right now.",
-];
-
-let stubIndex = 0;
-
-function getStubResponse(): string {
-  const response = STUB_RESPONSES[stubIndex % STUB_RESPONSES.length];
-  stubIndex++;
-  return response;
-}
+import ReactMarkdown from "react-markdown";
 
 export default function ChatDrawer() {
   const chatOpen = useAppStore((s) => s.chatOpen);
   const setChatOpen = useAppStore((s) => s.setChatOpen);
   const messages = useAppStore((s) => s.chatMessages);
   const addMessage = useAppStore((s) => s.addChatMessage);
+  const pageContext = useAppStore((s) => s.pageContext);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -33,9 +19,9 @@ export default function ChatDrawer() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  function handleSend() {
+  async function handleSend() {
     const text = input.trim();
-    if (!text) return;
+    if (!text || isTyping) return;
 
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
@@ -47,22 +33,49 @@ export default function ChatDrawer() {
     setInput("");
     setIsTyping(true);
 
-    // Stub: simulate a response after a short delay
-    setTimeout(() => {
+    const history = [...messages, userMsg].map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    try {
+      const res = await fetch(`${API_URL}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: history,
+          page_context: pageContext,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Request failed" }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
       const reply: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: getStubResponse(),
+        content: data.response || "No response.",
         timestamp: new Date(),
       };
       addMessage(reply);
+    } catch (err) {
+      const reply: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: `Sorry, I hit an error: ${err instanceof Error ? err.message : "Unknown error"}`,
+        timestamp: new Date(),
+      };
+      addMessage(reply);
+    } finally {
       setIsTyping(false);
-    }, 800 + Math.random() * 600);
+    }
   }
 
   return (
     <>
-      {/* Backdrop */}
       {chatOpen && (
         <div
           className="fixed inset-0 z-40 bg-stone-900/20 backdrop-blur-sm transition-opacity"
@@ -70,13 +83,11 @@ export default function ChatDrawer() {
         />
       )}
 
-      {/* Drawer */}
       <div
         className={`fixed top-0 right-0 z-50 h-screen w-full max-w-md bg-stone-50 border-l border-stone-300 shadow-2xl transition-transform duration-300 ${
           chatOpen ? "translate-x-0" : "translate-x-full"
         } flex flex-col`}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 h-14 border-b border-stone-200">
           <div className="flex items-center gap-2">
             <span className="font-serif font-black text-lg text-stone-900">Linky</span>
@@ -90,7 +101,6 @@ export default function ChatDrawer() {
           </button>
         </div>
 
-        {/* Messages */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {messages.map((msg) => (
             <div
@@ -101,10 +111,16 @@ export default function ChatDrawer() {
                 className={`max-w-[85%] px-4 py-2.5 rounded-xl text-sm leading-relaxed ${
                   msg.role === "user"
                     ? "bg-stone-900 text-stone-50 font-sans"
-                    : "bg-white border border-stone-200 text-stone-700 font-body shadow-sm"
+                    : "bg-white border border-stone-200 text-stone-700 shadow-sm"
                 }`}
               >
-                {msg.content}
+                {msg.role === "assistant" ? (
+                  <div className="font-body prose prose-stone prose-sm max-w-none">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
+                ) : (
+                  msg.content
+                )}
               </div>
             </div>
           ))}
@@ -118,7 +134,6 @@ export default function ChatDrawer() {
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
         <div className="border-t border-stone-200 px-5 py-3">
           <form
             onSubmit={(e) => {
@@ -136,7 +151,7 @@ export default function ChatDrawer() {
             />
             <button
               type="submit"
-              disabled={!input.trim()}
+              disabled={!input.trim() || isTyping}
               className="p-2.5 bg-stone-900 text-stone-50 rounded-lg hover:bg-stone-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <HiOutlinePaperAirplane className="w-4 h-4" />

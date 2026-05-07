@@ -27,9 +27,12 @@ export default function Predictions() {
       </div>
 
       {isLoading ? (
-        <p className="text-stone-400 font-sans">Loading...</p>
+        <div className="flex items-center gap-3 py-12 justify-center">
+          <div className="w-4 h-4 border-2 border-stone-300 border-t-stone-700 rounded-full animate-spin" />
+          <span className="text-sm font-sans text-stone-400">Loading predictions...</span>
+        </div>
       ) : predictions && predictions.length > 0 ? (
-        <div className="columns-1 md:columns-2 xl:columns-3 gap-6 space-y-4">
+        <div className="max-w-3xl space-y-6">
           {predictions.map((p) => <PredictionCard key={p.id} prediction={p} />)}
         </div>
       ) : (

@@ -370,7 +370,9 @@ def search_articles(query: str, n_results: int = 10, company: str = None) -> lis
     if company:
         search_params["filter_by"] = f"companies:={company.upper()}"
 
-    results = client.collections[COLLECTION_NAME].documents.search(search_params)
+    search_req = {"searches": [{"collection": COLLECTION_NAME, **search_params}]}
+    multi = client.multi_search.perform(search_req, {})
+    results = multi["results"][0] if multi.get("results") else {"hits": []}
 
     hits = []
     seen_articles = set()

@@ -67,7 +67,9 @@ def _search_typesense(query: str, symbol: str, days_back: int = 7, limit: int = 
                           "article_summary,source_name,published_at",
     }
 
-    results = client.collections[COLLECTION_NAME].documents.search(search_params)
+    search_req = {"searches": [{"collection": COLLECTION_NAME, **search_params}]}
+    multi = client.multi_search.perform(search_req, {})
+    results = multi["results"][0] if multi.get("results") else {"hits": []}
 
     hits = []
     seen = set()

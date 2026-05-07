@@ -1,7 +1,7 @@
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
 import { useReports, useReport } from "../api/reports";
 import ReportCard from "../components/ReportCard";
-import AiGenerated from "../components/AiGenerated";
 import EmptyState from "../components/EmptyState";
 
 export default function Reports() {
@@ -40,9 +40,9 @@ export default function Reports() {
                 <span className="text-xs font-sans font-semibold uppercase tracking-wider text-stone-400">{detail.report_type}</span>
                 <span className="text-xs text-stone-400 font-sans">{new Date(detail.generated_at).toLocaleString()}</span>
               </div>
-              <AiGenerated label="AI summary">
-                <p className="font-body text-sm text-stone-700 leading-relaxed">{detail.summary}</p>
-              </AiGenerated>
+              <div className="font-body text-sm text-stone-700 leading-relaxed prose prose-stone prose-sm max-w-none">
+                <ReactMarkdown>{detail.summary}</ReactMarkdown>
+              </div>
               {detail.data && (
                 <div className="space-y-2">
                   <h4 className="text-xs font-sans font-semibold text-stone-400 uppercase tracking-wider">Data</h4>

@@ -111,19 +111,22 @@ def _seed_feeds():
 
 
 @click.command("process-backlog")
+@click.option("--backfill", is_flag=True, default=True, help="Route to backfill queue (default)")
+@click.option("--main", is_flag=True, default=False, help="Route to main celery queue")
 @with_appcontext
-def process_backlog_command():
+def process_backlog_command(backfill, main):
     """Queue all unprocessed articles for processing via Celery."""
     from app.models import NewsArticle
     from app.tasks.articles import process_article
 
+    queue = "celery" if main else "backfill"
     articles = NewsArticle.query.filter_by(processed=False).all()
-    click.echo(f"Queuing {len(articles)} unprocessed articles")
+    click.echo(f"Queuing {len(articles)} unprocessed articles on '{queue}' queue")
 
     for article in articles:
-        process_article.delay(article.id)
+        process_article.apply_async(args=[article.id], queue=queue)
 
-    click.echo(f"Queued {len(articles)} articles for processing")
+    click.echo(f"Queued {len(articles)} articles")
 
 
 @click.command("backfill-prices")

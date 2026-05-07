@@ -1,3 +1,4 @@
+import ReactMarkdown from "react-markdown";
 import type { Prediction } from "../types";
 import SignalBadge from "./SignalBadge";
 
@@ -31,7 +32,9 @@ export default function PredictionCard({ prediction: p }: Props) {
           <SignalBadge direction={p.direction} confidence={p.confidence} />
         </div>
       </div>
-      <p className="font-body text-sm text-stone-600 leading-relaxed line-clamp-2 mb-2">{p.reasoning}</p>
+      <div className="font-body text-sm text-stone-600 leading-relaxed mb-2 prose prose-stone prose-sm max-w-none">
+        <ReactMarkdown>{p.reasoning}</ReactMarkdown>
+      </div>
       <div className="flex items-center gap-4 text-xs text-stone-400 font-sans">
         <span>{p.signal_count} signal{p.signal_count !== 1 ? "s" : ""}</span>
         {p.target_date && <span>Target: {new Date(p.target_date).toLocaleDateString()}</span>}

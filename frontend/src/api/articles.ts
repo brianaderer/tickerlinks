@@ -21,8 +21,6 @@ export function useSearchArticles(query: string) {
     queryFn: () =>
       apiFetch<NewsArticle[]>(`/articles/search/text?q=${encodeURIComponent(query)}&limit=20`),
     enabled: query.length >= 2,
-    placeholderData: (prev) => prev,
-    staleTime: 30_000,
   });
 }
 

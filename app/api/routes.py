@@ -146,6 +146,9 @@ def list_articles():
                 "published_at": a.published_at.isoformat()
                 if a.published_at
                 else None,
+                "fetched_at": a.fetched_at.isoformat()
+                if a.fetched_at
+                else None,
             }
             for a in articles
         ]

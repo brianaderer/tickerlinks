@@ -115,6 +115,13 @@ class MarketFetcher(BaseFetcher):
             company = Company.query.filter_by(symbol=symbol).first()
             if company:
                 company.name = meta.get("longName") or meta.get("shortName")
+                try:
+                    from app.sources.fundamentals import FundamentalsFetcher
+                    caps = FundamentalsFetcher._fetch_market_caps_batch([symbol])
+                    if symbol in caps:
+                        company.market_cap = caps[symbol]
+                except Exception:
+                    logger.warning("Could not fetch market cap for %s during sync", symbol)
                 db.session.commit()
                 logger.info("Synced company info for %s", symbol)
             return meta

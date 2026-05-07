@@ -86,7 +86,7 @@ export default function CompanyDetail() {
                 )}
                 <div className="flex gap-3 mt-1.5 text-xs text-stone-400 font-sans">
                   <span>{a.source_name}</span>
-                  {a.published_at && <span>{new Date(a.published_at).toLocaleString()}</span>}
+                  <span>{new Date(a.published_at || a.fetched_at || "").toLocaleString()}</span>
                 </div>
               </div>
             ))}
