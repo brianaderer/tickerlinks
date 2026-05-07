@@ -6,6 +6,7 @@ import { useArticles } from "../api/articles";
 import PriceChart from "../components/PriceChart";
 import PredictionCard from "../components/PredictionCard";
 import SignalBadge from "../components/SignalBadge";
+import { useAppStore } from "../store";
 import { decodeHtml } from "../utils";
 
 export default function CompanyDetail() {
@@ -15,6 +16,7 @@ export default function CompanyDetail() {
   const { data: matches, isLoading: matchesLoading } = useSignalMatches(symbol);
   const { data: predictions, isLoading: predsLoading } = usePredictions(symbol);
   const runPrediction = useRunPrediction(symbol!);
+  const isPending = useAppStore((s) => s.pendingPredictions.has(symbol!));
   const { data: articles, isLoading: articlesLoading } = useArticles(symbol);
 
   const loading = pricesLoading || matchesLoading || predsLoading || articlesLoading;
@@ -69,13 +71,13 @@ export default function CompanyDetail() {
           <h3 className="font-serif text-base font-bold text-stone-900">Predictions</h3>
           <button
             onClick={() => runPrediction.mutate()}
-            disabled={runPrediction.isPending}
+            disabled={isPending}
             className="flex items-center gap-1.5 px-3 py-1 text-xs font-sans font-semibold border border-stone-300 rounded hover:bg-stone-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {runPrediction.isPending ? (
+            {isPending ? (
               <>
                 <span className="w-3 h-3 border-2 border-stone-300 border-t-stone-700 rounded-full animate-spin" />
-                Running...
+                Analyzing...
               </>
             ) : (
               "Run Prediction"
@@ -83,13 +85,19 @@ export default function CompanyDetail() {
           </button>
         </div>
         <div className="h-px bg-stone-900 mb-4" />
+        {isPending && (
+          <div className="flex items-center gap-3 py-4 px-4 bg-stone-100 rounded mb-4">
+            <span className="w-4 h-4 border-2 border-stone-300 border-t-stone-700 rounded-full animate-spin flex-shrink-0" />
+            <span className="text-sm font-sans text-stone-600">Running full signal analysis and LLM prediction for {symbol}. This typically takes 30 seconds to 1 minute.</span>
+          </div>
+        )}
         {predictions && predictions.length > 0 ? (
           <div className="space-y-4">
             {predictions.map((p) => <PredictionCard key={p.id} prediction={p} />)}
           </div>
-        ) : (
+        ) : !isPending ? (
           <p className="text-sm font-sans text-stone-400 italic">No recent predictions. Click "Run Prediction" to analyze this company.</p>
-        )}
+        ) : null}
       </section>
 
       {matches && matches.length > 0 && (

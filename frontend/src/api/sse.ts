@@ -58,10 +58,25 @@ export function useSSE() {
       } catch { /* ignore */ }
     });
 
+    es.addEventListener("signals:analysis_started", (e: MessageEvent) => {
+      if (!ready.current) return;
+      try {
+        const data = JSON.parse(e.data);
+        if (data.mode === "manual" && data.symbol) {
+          useAppStore.getState().addPendingPrediction(data.symbol);
+        }
+      } catch { /* ignore */ }
+    });
+
     es.addEventListener("signals:analysis_complete", (e: MessageEvent) => {
       if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
+        if (data.mode === "manual" && data.symbol) {
+          useAppStore.getState().removePendingPrediction(data.symbol);
+          queryClient.invalidateQueries({ queryKey: ["predictions", data.symbol] });
+          queryClient.invalidateQueries({ queryKey: ["predictions"] });
+        }
         if (data.predictions) {
           queryClient.setQueryData(["predictions"], data.predictions);
         }

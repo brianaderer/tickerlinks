@@ -1,5 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiFetch, API_URL } from "./client";
+import { useAppStore } from "../store";
 import type { Prediction } from "../types";
 
 export function usePredictions(company?: string, direction?: string) {
@@ -16,7 +17,7 @@ export function usePredictions(company?: string, direction?: string) {
 }
 
 export function useRunPrediction(symbol: string) {
-  const qc = useQueryClient();
+  const addPending = useAppStore((s) => s.addPendingPrediction);
   return useMutation({
     mutationFn: async () => {
       const res = await fetch(`${API_URL}/predictions/${symbol}/run`, { method: "POST" });
@@ -24,10 +25,7 @@ export function useRunPrediction(symbol: string) {
       return res.json();
     },
     onSuccess: () => {
-      setTimeout(() => {
-        qc.invalidateQueries({ queryKey: ["predictions", symbol] });
-        qc.invalidateQueries({ queryKey: ["predictions"] });
-      }, 15_000);
+      addPending(symbol);
     },
   });
 }

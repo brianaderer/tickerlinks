@@ -17,6 +17,7 @@ interface AppState {
   chatToolStatus: string | null;
   pageContext: string;
   sseConnected: boolean;
+  pendingPredictions: Set<string>;
 
   setSelectedSymbol: (symbol: string | null) => void;
   toggleSidebar: () => void;
@@ -28,6 +29,8 @@ interface AppState {
   setSSEConnected: (connected: boolean) => void;
   setChatStreaming: (streaming: boolean) => void;
   setChatToolStatus: (tool: string | null) => void;
+  addPendingPrediction: (symbol: string) => void;
+  removePendingPrediction: (symbol: string) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -39,6 +42,7 @@ export const useAppStore = create<AppState>((set) => ({
   chatStreaming: false,
   chatToolStatus: null,
   sseConnected: false,
+  pendingPredictions: new Set(),
   chatMessages: [
     {
       id: "welcome",
@@ -60,4 +64,12 @@ export const useAppStore = create<AppState>((set) => ({
   setChatStreaming: (streaming) =>
     set({ chatStreaming: streaming, chatToolStatus: streaming ? null : null }),
   setChatToolStatus: (tool) => set({ chatToolStatus: tool }),
+  addPendingPrediction: (symbol) =>
+    set((s) => ({ pendingPredictions: new Set([...s.pendingPredictions, symbol]) })),
+  removePendingPrediction: (symbol) =>
+    set((s) => {
+      const next = new Set(s.pendingPredictions);
+      next.delete(symbol);
+      return { pendingPredictions: next };
+    }),
 }));
