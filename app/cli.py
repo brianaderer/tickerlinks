@@ -129,6 +129,52 @@ def process_backlog_command(backfill, main):
     click.echo(f"Queued {len(articles)} articles")
 
 
+@click.command("clean-articles")
+@click.option("--reprocess", is_flag=True, default=False, help="Re-queue cleaned articles for processing")
+@click.option("--queue", default="backfill", help="Celery queue name (default: backfill)")
+@with_appcontext
+def clean_articles_command(reprocess, queue):
+    """Detect and clean articles with bot-check content or no usable text."""
+    from app.models import NewsArticle
+    from app.articles.processor import BOT_CHECK_PHRASES
+
+    articles = NewsArticle.query.filter(NewsArticle.processed == True).all()
+    bot_check = 0
+    no_content = 0
+    already_good = 0
+
+    for a in articles:
+        text = (a.full_text or "").lower()
+        is_bad = any(phrase in text for phrase in BOT_CHECK_PHRASES)
+
+        if is_bad:
+            a.full_text = None
+            a.content_source = None
+            a.processed = False
+            bot_check += 1
+        elif not a.full_text and not a.summary:
+            a.content_source = None
+            no_content += 1
+        elif not a.content_source:
+            if a.full_text and a.full_text == a.summary:
+                a.content_source = "summary"
+            elif a.full_text:
+                a.content_source = "scraped"
+            already_good += 1
+
+    db.session.commit()
+    click.echo(f"Bot-check pages cleared: {bot_check}")
+    click.echo(f"No usable content: {no_content}")
+    click.echo(f"Already good (tagged): {already_good}")
+
+    if reprocess:
+        from app.tasks.articles import process_article
+        to_reprocess = NewsArticle.query.filter_by(processed=False).all()
+        for a in to_reprocess:
+            process_article.apply_async(args=[a.id], queue=queue)
+        click.echo(f"Queued {len(to_reprocess)} articles for reprocessing on '{queue}'")
+
+
 @click.command("backfill-prices")
 @with_appcontext
 def backfill_prices_command():

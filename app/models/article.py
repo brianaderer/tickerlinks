@@ -24,6 +24,7 @@ class NewsArticle(db.Model):
     author = db.Column(db.String(255))
     source_name = db.Column(db.String(255))
     full_text = db.Column(db.Text)
+    content_source = db.Column(db.String(20))  # 'scraped', 'summary', or None
     processed = db.Column(db.Boolean, default=False, nullable=False)
     published_at = db.Column(db.DateTime(timezone=True))
     fetched_at = db.Column(

@@ -88,20 +88,48 @@ def process_single_article(article_id: int) -> dict:
         return {"error": str(article_id)}
 
 
+BOT_CHECK_PHRASES = [
+    "cloudflare", "security verification", "checking your browser",
+    "captcha", "are you a robot", "verify you are human",
+    "just a moment", "enable javascript and cookies",
+    "access denied", "403 forbidden", "please enable cookies",
+]
+
+
+def _is_bot_check(text: str) -> bool:
+    lower = text.lower()
+    return any(phrase in lower for phrase in BOT_CHECK_PHRASES)
+
+
 def _process_article(article: NewsArticle):
     title = article.title or ""
     summary = article.summary or ""
 
-    if not article.full_text:
-        article.full_text = _scrape_full_text(article.url)
-    if not article.full_text:
-        article.full_text = _scrape_with_playwright(article.url)
+    # Try to scrape full text if we don't have it or existing text is a bot page
+    if not article.full_text or _is_bot_check(article.full_text):
+        scraped = _scrape_full_text(article.url)
+        if scraped and not _is_bot_check(scraped):
+            article.full_text = scraped
+            article.content_source = "scraped"
+        else:
+            article.full_text = None
+            article.content_source = None
 
-    full_text = article.full_text or ""
-    if not full_text:
-        logger.info("Skipping article %d — no full text available: %s", article.id, title[:60])
+    if article.full_text and not article.content_source:
+        article.content_source = "scraped"
+
+    # Fall back to RSS summary if scraping failed
+    if not article.full_text and summary and len(summary) > 50:
+        article.full_text = summary
+        article.content_source = "summary"
+
+    # If we have neither, skip this article entirely
+    if not article.full_text:
+        logger.info("Dropping article %d — no usable content: %s", article.id, title[:60])
+        article.content_source = None
         return {}
 
+    full_text = article.full_text
     companies = match_tickers(title, summary)
 
     db.session.execute(article_companies.delete().where(
@@ -151,38 +179,13 @@ def _scrape_full_text(url: str) -> Optional[str]:
             paragraphs = soup.find_all("p")
 
         text = "\n\n".join(p.get_text(separator=" ", strip=True) for p in paragraphs if len(p.get_text(separator=" ", strip=True)) > 30)
-        return text if len(text) > 100 else None
+        if len(text) < 100:
+            return None
+        if _is_bot_check(text):
+            return None
+        return text
     except Exception:
         logger.debug("Failed to scrape %s", url)
-        return None
-
-
-def _scrape_with_playwright(url: str) -> Optional[str]:
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(url, timeout=10000, wait_until="domcontentloaded")
-            page.wait_for_timeout(2000)
-
-            article_el = (
-                page.query_selector("article")
-                or page.query_selector("div.caas-body")
-                or page.query_selector("div.article-content")
-            )
-            if article_el:
-                text = article_el.inner_text()
-            else:
-                text = page.inner_text("body")
-
-            browser.close()
-
-            lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 30]
-            clean = "\n\n".join(lines)
-            return clean if len(clean) > 100 else None
-    except Exception:
-        logger.debug("Playwright scrape failed for %s", url)
         return None
 
 

@@ -123,7 +123,9 @@ def list_articles():
     limit = request.args.get("limit", 50, type=int)
     company_filter = request.args.get("company")
 
-    query = NewsArticle.query.order_by(NewsArticle.published_at.desc())
+    query = NewsArticle.query.filter(
+        NewsArticle.content_source != None
+    ).order_by(NewsArticle.published_at.desc())
     if company_filter:
         company = Company.query.filter_by(
             symbol=company_filter.upper()
@@ -142,6 +144,7 @@ def list_articles():
                 "summary": a.summary[:200] if a.summary else None,
                 "url": a.url,
                 "source_name": a.source_name,
+                "content_source": a.content_source,
                 "companies": _article_companies(a.id),
                 "published_at": a.published_at.isoformat()
                 if a.published_at
@@ -166,6 +169,7 @@ def get_article(article_id):
         "url": a.url,
         "author": a.author,
         "source_name": a.source_name,
+        "content_source": a.content_source,
         "companies": _article_companies(a.id),
         "published_at": a.published_at.isoformat() if a.published_at else None,
         "fetched_at": a.fetched_at.isoformat() if a.fetched_at else None,
@@ -192,6 +196,7 @@ def batch_articles():
             "summary": a.summary[:200] if a.summary else None,
             "url": a.url,
             "source_name": a.source_name,
+            "content_source": a.content_source,
             "companies": _article_companies(a.id),
             "published_at": a.published_at.isoformat() if a.published_at else None,
         }
@@ -343,6 +348,7 @@ def text_search_articles():
             "summary": article.summary[:200] if article.summary else None,
             "url": article.url,
             "source_name": article.source_name,
+            "content_source": article.content_source,
             "companies": [],
             "published_at": article.published_at.isoformat() if article.published_at else None,
         })

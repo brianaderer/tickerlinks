@@ -46,6 +46,7 @@ export interface NewsArticle {
   summary: string | null;
   url: string;
   source_name: string;
+  content_source: "scraped" | "summary" | null;
   companies: ArticleCompany[];
   published_at: string | null;
   fetched_at: string | null;

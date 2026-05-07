@@ -89,6 +89,7 @@ def _search_typesense(query: str, symbol: str, days_back: int = 7, limit: int = 
             "title": article.title or "",
             "full_text": article.full_text or "",
             "summary": article.summary or "",
+            "content_source": article.content_source or "unknown",
             "published_at": article.published_at.isoformat() if article.published_at else "",
             "source_name": article.source_name or "",
             "sentiment": doc.get("company_sentiments", ""),
@@ -253,8 +254,9 @@ def format_research_results(docs: list[dict]) -> str:
     parts = []
     for d in docs:
         text = d.get("full_text") or d.get("summary") or "No text available"
+        source_tag = "[SUMMARY ONLY] " if d.get("content_source") == "summary" else ""
         parts.append(
-            f"[{d['published_at']}] {d['title']} ({d['source_name']})\n"
+            f"{source_tag}[{d['published_at']}] {d['title']} ({d['source_name']})\n"
             f"Sentiment: {d['sentiment']}\n"
             f"{text}"
         )

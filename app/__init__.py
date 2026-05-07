@@ -23,9 +23,10 @@ def create_app(config_class=Config):
     from app.api.chat import bp as chat_bp
     app.register_blueprint(chat_bp, url_prefix="/api")
 
-    from app.cli import seed_command, process_backlog_command, backfill_prices_command
+    from app.cli import seed_command, process_backlog_command, backfill_prices_command, clean_articles_command
     app.cli.add_command(seed_command)
     app.cli.add_command(process_backlog_command)
     app.cli.add_command(backfill_prices_command)
+    app.cli.add_command(clean_articles_command)
 
     return app

@@ -102,9 +102,12 @@ export default function Articles() {
                   </div>
                 )}
               </div>
-              <div className="flex gap-3 mt-2 text-xs text-stone-400 font-sans">
+              <div className="flex items-center gap-3 mt-2 text-xs text-stone-400 font-sans">
                 <span className="font-medium">{a.source_name}</span>
                 {(a.published_at || a.fetched_at) && <span>{new Date(a.published_at || a.fetched_at!).toLocaleString()}</span>}
+                {a.content_source === "summary" && (
+                  <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[10px] font-semibold uppercase tracking-wide">Summary</span>
+                )}
               </div>
             </div>
           ))}

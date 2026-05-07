@@ -67,11 +67,17 @@ export default function ArticleReader() {
         )}
       </header>
 
-      {article.summary && (
+      {article.content_source === "summary" && (
+        <div className="flex items-center gap-2 px-3 py-2 mb-6 bg-amber-50 border border-amber-200 rounded-lg">
+          <span className="text-xs font-sans font-semibold text-amber-700 uppercase tracking-wide">Summary only</span>
+          <span className="text-xs font-sans text-amber-600">Full article text could not be retrieved from the source.</span>
+        </div>
+      )}
+
+      {article.content_source === "scraped" && article.summary && (
         <p className="font-body text-base text-stone-600 leading-relaxed italic border-l-2 border-stone-200 pl-3 mb-8">{decodeHtml(article.summary)}</p>
       )}
 
-      {/* Full text */}
       {paragraphs ? (
         <div className="space-y-4">
           {paragraphs.map((p, i) => (
