@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_WEIGHT = 0.5
 MIN_SIGNAL_TYPES = 2
-MIN_WEIGHTED_SCORE = 1.5
+MIN_WEIGHTED_SCORE = 0.5
 
 
 def aggregate_node(state: EngineState) -> EngineState:

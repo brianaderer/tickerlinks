@@ -11,6 +11,8 @@ export default function ChatDrawer() {
   const messages = useAppStore((s) => s.chatMessages);
   const addMessage = useAppStore((s) => s.addChatMessage);
   const pageContext = useAppStore((s) => s.pageContext);
+  const toolStatus = useAppStore((s) => s.chatToolStatus);
+  const setChatStreaming = useAppStore((s) => s.setChatStreaming);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -32,6 +34,7 @@ export default function ChatDrawer() {
     addMessage(userMsg);
     setInput("");
     setIsTyping(true);
+    setChatStreaming(true);
 
     const history = [...messages, userMsg].map((m) => ({
       role: m.role,
@@ -71,6 +74,7 @@ export default function ChatDrawer() {
       addMessage(reply);
     } finally {
       setIsTyping(false);
+      setChatStreaming(false);
     }
   }
 
@@ -127,7 +131,9 @@ export default function ChatDrawer() {
           {isTyping && (
             <div className="flex justify-start">
               <div className="bg-white border border-stone-200 rounded-xl px-4 py-2.5 shadow-sm">
-                <span className="text-sm text-stone-400 font-sans animate-pulse">Linky is thinking...</span>
+                <span className="text-sm text-stone-400 font-sans animate-pulse">
+                  {toolStatus ? `Looking up ${toolStatus}...` : "Linky is thinking..."}
+                </span>
               </div>
             </div>
           )}

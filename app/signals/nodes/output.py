@@ -50,9 +50,9 @@ def _persist_signals(raw_signals: list[dict]):
         match = SignalMatch(
             signal_id=signal_cache[cache_key].id,
             company_id=sig_data["company_id"],
-            confidence=sig_data["confidence"],
+            confidence=float(sig_data["confidence"]),
             direction=sig_data["direction"],
-            context=sig_data.get("context", {}),
+            context={k: float(v) if hasattr(v, 'item') else v for k, v in (sig_data.get("context") or {}).items()},
             detected_at=now,
         )
         db.session.add(match)
@@ -61,7 +61,7 @@ def _persist_signals(raw_signals: list[dict]):
             "signal": sig_name,
             "symbol": sig_data.get("symbol", ""),
             "direction": direction,
-            "confidence": sig_data["confidence"],
+            "confidence": float(sig_data["confidence"]),
         })
 
     db.session.commit()
@@ -78,8 +78,8 @@ def _persist_predictions(predictions: list[dict], raw_signals: list[dict]):
 
         if existing:
             existing.direction = pred["direction"]
-            existing.confidence = pred["confidence"]
-            existing.magnitude = pred.get("magnitude")
+            existing.confidence = float(pred["confidence"])
+            existing.magnitude = float(pred["magnitude"]) if pred.get("magnitude") is not None else None
             existing.reasoning = pred.get("reasoning", "")
             existing.target_date = target
             existing.created_at = now
@@ -90,8 +90,8 @@ def _persist_predictions(predictions: list[dict], raw_signals: list[dict]):
             prediction = Prediction(
                 company_id=pred["company_id"],
                 direction=pred["direction"],
-                confidence=pred["confidence"],
-                magnitude=pred.get("magnitude"),
+                confidence=float(pred["confidence"]),
+                magnitude=float(pred["magnitude"]) if pred.get("magnitude") is not None else None,
                 reasoning=pred.get("reasoning", ""),
                 target_date=target,
                 created_at=now,

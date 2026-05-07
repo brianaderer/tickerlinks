@@ -25,6 +25,9 @@ Net direction from aggregation: {direction} at {confidence:.0%} confidence
 Write a crisp 1-2 sentence digest. No preamble, no bullet points — just the assessment."""
 
 
+MAX_DIGESTS = 20
+
+
 def digest_node(state: EngineState) -> EngineState:
     raw_signals = state.get("signals", [])
     predictions = state.get("strong_predictions", []) + state.get("weak_predictions", [])
@@ -36,6 +39,8 @@ def digest_node(state: EngineState) -> EngineState:
     for sig in raw_signals:
         by_company[sig["company_id"]].append(sig)
 
+    ranked = _rank_companies(by_company, MAX_DIGESTS)
+
     pred_map = {p["company_id"]: p for p in predictions}
 
     llm = _get_llm()
@@ -46,10 +51,7 @@ def digest_node(state: EngineState) -> EngineState:
     now = datetime.now(timezone.utc)
     generated = 0
 
-    for company_id, signals in by_company.items():
-        if len(signals) < MIN_MATCHES_FOR_DIGEST:
-            continue
-
+    for company_id, signals in ranked:
         company = Company.query.get(company_id)
         if not company:
             continue
@@ -119,8 +121,24 @@ def _get_llm() -> ChatOpenAI | None:
     )
 
 
+def _rank_companies(by_company: dict, limit: int) -> list[tuple[int, list]]:
+    scored = []
+    for company_id, signals in by_company.items():
+        signal_types = set(s["signal_type"] for s in signals)
+        if len(signal_types) < 2:
+            continue
+        weighted_score = sum(float(s["confidence"]) for s in signals)
+        scored.append((company_id, signals, weighted_score))
+    scored.sort(key=lambda x: x[2], reverse=True)
+    return [(cid, sigs) for cid, sigs, _ in scored[:limit]]
+
+
 def _clean_response(text: str) -> str:
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    text = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+    if "<think>" in text:
+        text = text.split("</think>")[-1].strip()
+    if text.startswith("<think>"):
+        text = ""
     return text
 
 

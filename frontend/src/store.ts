@@ -14,7 +14,7 @@ interface AppState {
   chatOpen: boolean;
   chatMessages: ChatMessage[];
   chatStreaming: boolean;
-  chatTokenBuffer: string;
+  chatToolStatus: string | null;
   pageContext: string;
   sseConnected: boolean;
 
@@ -27,8 +27,7 @@ interface AppState {
   setPageContext: (ctx: string) => void;
   setSSEConnected: (connected: boolean) => void;
   setChatStreaming: (streaming: boolean) => void;
-  appendChatToken: (token: string) => void;
-  finalizeChatMessage: (fullText: string) => void;
+  setChatToolStatus: (tool: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -38,7 +37,7 @@ export const useAppStore = create<AppState>((set) => ({
   pageContext: "Dashboard",
   chatOpen: false,
   chatStreaming: false,
-  chatTokenBuffer: "",
+  chatToolStatus: null,
   sseConnected: false,
   chatMessages: [
     {
@@ -59,21 +58,6 @@ export const useAppStore = create<AppState>((set) => ({
   setPageContext: (ctx) => set({ pageContext: ctx }),
   setSSEConnected: (connected) => set({ sseConnected: connected }),
   setChatStreaming: (streaming) =>
-    set({ chatStreaming: streaming, chatTokenBuffer: streaming ? "" : "" }),
-  appendChatToken: (token) =>
-    set((s) => ({ chatTokenBuffer: s.chatTokenBuffer + token })),
-  finalizeChatMessage: (fullText) =>
-    set((s) => ({
-      chatStreaming: false,
-      chatTokenBuffer: "",
-      chatMessages: [
-        ...s.chatMessages,
-        {
-          id: `assistant-${Date.now()}`,
-          role: "assistant",
-          content: fullText,
-          timestamp: new Date(),
-        },
-      ],
-    })),
+    set({ chatStreaming: streaming, chatToolStatus: streaming ? null : null }),
+  setChatToolStatus: (tool) => set({ chatToolStatus: tool }),
 }));

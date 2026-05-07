@@ -106,27 +106,14 @@ export function useSSE() {
       } catch { /* ignore */ }
     });
 
-    // -- Chat streaming (always active, even during replay) --
+    // Chat events are handled by the fetch response in ChatDrawer.
+    // SSE chat events are only used for tool-call status indicators.
 
-    es.addEventListener("chat:thinking", () => {
-      useAppStore.getState().setChatStreaming(true);
-    });
-
-    es.addEventListener("chat:token", (e: MessageEvent) => {
+    es.addEventListener("chat:tool_call", (e: MessageEvent) => {
+      if (!ready.current) return;
       try {
-        useAppStore.getState().appendChatToken(JSON.parse(e.data).text);
-      } catch { /* ignore */ }
-    });
-
-    es.addEventListener("chat:done", (e: MessageEvent) => {
-      try {
-        useAppStore.getState().finalizeChatMessage(JSON.parse(e.data).text);
-      } catch { /* ignore */ }
-    });
-
-    es.addEventListener("chat:error", (e: MessageEvent) => {
-      try {
-        useAppStore.getState().finalizeChatMessage(`Error: ${JSON.parse(e.data).error}`);
+        const data = JSON.parse(e.data);
+        useAppStore.getState().setChatToolStatus(data.tool);
       } catch { /* ignore */ }
     });
   }, [queryClient]);

@@ -49,11 +49,12 @@ def chat():
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     llm = ChatOpenAI(
-        model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        model="Qwen/Qwen3-14B",
         openai_api_key=api_key,
         openai_api_base=os.environ.get("LLM_API_BASE", "https://api.deepinfra.com/v1/openai"),
         temperature=0.3,
         max_tokens=2000,
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
     llm_with_tools = llm.bind_tools(LINKY_TOOLS)
 
@@ -72,8 +73,6 @@ def chat():
             if not is_last and len(content) > 500:
                 content = content[:500] + "\n[truncated]"
             lc_messages.append(AIMessage(content=content))
-
-    sse_publish("chat", "thinking", {})
 
     try:
         tool_map = {t.name: t for t in LINKY_TOOLS}
@@ -113,10 +112,8 @@ def chat():
         text = response.content or ""
         text = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
 
-        sse_publish("chat", "done", {"text": text})
         return jsonify({"response": text})
 
     except Exception as e:
         logger.exception("Linky chat failed")
-        sse_publish("chat", "error", {"error": str(e)})
         return jsonify({"error": str(e)}), 502
