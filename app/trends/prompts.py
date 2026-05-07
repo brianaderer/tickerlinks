@@ -13,14 +13,14 @@ INSTRUCTIONS:
 - Use the research_company tool to investigate the most promising candidates — search by topic keyword, not just ticker
 - After research, output your final 10 trends as a JSON array
 
-OUTPUT FORMAT — return ONLY a JSON object:
+OUTPUT FORMAT — return ONLY a JSON object. Include up to 10 article_ids per trend — the more supporting evidence, the stronger the trend signal:
 {{
     "trends": [
         {{
             "rank": 1,
             "headline": "One sentence trend headline",
             "top_tags": ["tag1", "tag2", "tag3"],
-            "article_ids": [230, 215, 198],
+            "article_ids": [230, 215, 198, 187, 175, 163, 158, 142],
             "companies": ["NVDA", "AMD"],
             "first_seen": "2026-05-01",
             "latest": "2026-05-07"

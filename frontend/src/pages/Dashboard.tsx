@@ -1,9 +1,10 @@
+import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import LinkedMarkdown from "../components/LinkedMarkdown";
 import { useLatestReport } from "../api/reports";
 import { usePredictions } from "../api/predictions";
 import { useSignalDigests } from "../api/signals";
-import { useArticles, useSentiment } from "../api/articles";
+import { useArticles, useSentiment, useArticlesByIds } from "../api/articles";
 import { useTrends } from "../api/trends";
 import SignalBadge from "../components/SignalBadge";
 import EmptyState from "../components/EmptyState";
@@ -18,6 +19,32 @@ export default function Dashboard() {
   const { data: trendSnapshot } = useTrends();
   const trends = trendSnapshot?.trends;
 
+  // Collect top article IDs from trending agent (deduped, ordered by trend rank)
+  const topStoryIds = useMemo(() => {
+    if (!trends?.length) return [];
+    const seen = new Set<number>();
+    const ids: number[] = [];
+    for (const t of trends.slice(0, 4)) {
+      for (const aid of t.article_ids ?? []) {
+        if (!seen.has(aid)) {
+          seen.add(aid);
+          ids.push(aid);
+        }
+        if (ids.length >= 10) break;
+      }
+      if (ids.length >= 10) break;
+    }
+    return ids;
+  }, [trends]);
+
+  const { data: topStoryArticles } = useArticlesByIds(topStoryIds);
+  // Maintain trend-ranked order
+  const topStories = useMemo(() => {
+    if (!topStoryArticles?.length) return [];
+    const map = new Map(topStoryArticles.map((a) => [a.id, a]));
+    return topStoryIds.map((id) => map.get(id)).filter(Boolean) as typeof topStoryArticles;
+  }, [topStoryArticles, topStoryIds]);
+
   return (
     <div className="space-y-0">
       {/* Masthead section label */}
@@ -27,53 +54,58 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* Above the fold: Top Stories (news) */}
-      <div className="border-t-2 border-stone-900 py-6">
-        <span className="text-xs font-sans font-semibold uppercase tracking-wider text-stone-400">Top Stories</span>
-        {(!articles || articles.length === 0) ? (
-          <EmptyState message="No articles yet. Top stories appear once RSS feeds are polled and processed." />
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 mt-4">
-            {/* Lead article */}
-            <div className="lg:col-span-7 pr-0 lg:pr-8 lg:border-r border-stone-300">
-              <Link to="/articles/$articleId" params={{ articleId: String(articles[0].id) }} className="group">
-                <h2 className="font-serif text-3xl font-black leading-tight text-stone-900 group-hover:underline">
-                  {decodeHtml(articles[0].title)}
-                </h2>
-              </Link>
-              {articles[0].summary && (
-                <p className="font-body text-base text-stone-600 leading-relaxed mt-3 line-clamp-4">{decodeHtml(articles[0].summary)}</p>
-              )}
-              <div className="flex items-center gap-3 mt-3 text-xs text-stone-400 font-sans">
-                <span className="font-medium">{articles[0].source_name}</span>
-                {articles[0].companies?.map((c) => (
-                  <Link key={c.symbol} to="/companies/$symbol" params={{ symbol: c.symbol }}
-                    className="font-semibold text-stone-700 hover:underline">{c.symbol}</Link>
-                ))}
-                {articles[0].published_at && <span>{new Date(articles[0].published_at).toLocaleString()}</span>}
-              </div>
-            </div>
-            {/* Secondary articles */}
-            <div className="lg:col-span-5 pl-0 lg:pl-8 mt-4 lg:mt-0">
-              {articles.slice(1, 4).map((a, i) => (
-                <div key={a.id} className={`${i > 0 ? "mt-4 pt-4 border-t border-stone-200" : ""}`}>
-                  <Link to="/articles/$articleId" params={{ articleId: String(a.id) }} className="group">
-                    <h3 className="font-serif text-lg font-bold text-stone-900 group-hover:underline leading-snug">{decodeHtml(a.title)}</h3>
-                    {a.summary && <p className="font-body text-sm text-stone-600 line-clamp-2 mt-1">{decodeHtml(a.summary)}</p>}
+      {/* Above the fold: Top Stories (driven by trending agent, fallback to recent) */}
+      {(() => {
+        const stories = topStories.length > 0 ? topStories : articles ?? [];
+        const lead = stories[0];
+        const secondary = stories.slice(1, 4);
+        return (
+          <div className="border-t-2 border-stone-900 py-6">
+            <span className="text-xs font-sans font-semibold uppercase tracking-wider text-stone-400">Top Stories</span>
+            {!lead ? (
+              <EmptyState message="No articles yet. Top stories appear once the trending agent runs." />
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 mt-4">
+                <div className="lg:col-span-7 pr-0 lg:pr-8 lg:border-r border-stone-300">
+                  <Link to="/articles/$articleId" params={{ articleId: String(lead.id) }} className="group">
+                    <h2 className="font-serif text-3xl font-black leading-tight text-stone-900 group-hover:underline">
+                      {decodeHtml(lead.title)}
+                    </h2>
                   </Link>
-                  <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans">
-                    <span className="font-medium">{a.source_name}</span>
-                    {a.companies?.map((c) => (
+                  {lead.summary && (
+                    <p className="font-body text-base text-stone-600 leading-relaxed mt-3 line-clamp-4">{decodeHtml(lead.summary)}</p>
+                  )}
+                  <div className="flex items-center gap-3 mt-3 text-xs text-stone-400 font-sans">
+                    <span className="font-medium">{lead.source_name}</span>
+                    {lead.companies?.map((c) => (
                       <Link key={c.symbol} to="/companies/$symbol" params={{ symbol: c.symbol }}
                         className="font-semibold text-stone-700 hover:underline">{c.symbol}</Link>
                     ))}
+                    {lead.published_at && <span>{new Date(lead.published_at).toLocaleString()}</span>}
                   </div>
                 </div>
-              ))}
-            </div>
+                <div className="lg:col-span-5 pl-0 lg:pl-8 mt-4 lg:mt-0">
+                  {secondary.map((a, i) => (
+                    <div key={a.id} className={`${i > 0 ? "mt-4 pt-4 border-t border-stone-200" : ""}`}>
+                      <Link to="/articles/$articleId" params={{ articleId: String(a.id) }} className="group">
+                        <h3 className="font-serif text-lg font-bold text-stone-900 group-hover:underline leading-snug">{decodeHtml(a.title)}</h3>
+                        {a.summary && <p className="font-body text-sm text-stone-600 line-clamp-2 mt-1">{decodeHtml(a.summary)}</p>}
+                      </Link>
+                      <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans">
+                        <span className="font-medium">{a.source_name}</span>
+                        {a.companies?.map((c) => (
+                          <Link key={c.symbol} to="/companies/$symbol" params={{ symbol: c.symbol }}
+                            className="font-semibold text-stone-700 hover:underline">{c.symbol}</Link>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        );
+      })()}
 
       {/* Trending Topics */}
       <section className="py-6 border-t border-stone-300">
