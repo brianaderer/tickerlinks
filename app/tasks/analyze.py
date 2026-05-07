@@ -103,7 +103,26 @@ def run_company_prediction(company_id: int):
     }
 
     state = gather_node(state)
-    state = aggregate_node(state)
+
+    bullish = [s for s in signals if s["direction"] == "bullish"]
+    bearish = [s for s in signals if s["direction"] == "bearish"]
+    bullish_score = sum(s["confidence"] for s in bullish)
+    bearish_score = sum(s["confidence"] for s in bearish)
+    total = bullish_score + bearish_score
+    direction = "bullish" if bullish_score >= bearish_score else "bearish"
+    confidence = round(max(bullish_score, bearish_score) / total if total else 0.5, 3)
+
+    state["predictions"] = [{
+        "company_id": company_id,
+        "symbol": symbol,
+        "direction": direction,
+        "confidence": confidence,
+        "bullish_signals": len(bullish),
+        "bearish_signals": len(bearish),
+        "signal_names": [s["signal_name"] for s in signals],
+        "weights_used": {},
+    }]
+
     state = predict_node(state)
     state = evaluate_node(state)
     state = output_node(state)
