@@ -26,7 +26,9 @@ RULES:
 - If the user is on a company page, you already know which ticker they're looking at
 - Use tools proactively — don't guess when you can look up real data
 - Never fabricate data points — if a tool returns nothing, say so
-- Do NOT wrap output in <think> tags or any XML"""
+- Do NOT wrap output in <think> tags or any XML
+- When answering a follow-up, BUILD on previous context — do NOT repeat your earlier answer verbatim
+- Each reply should add new insight or directly answer the new question"""
 
 MAX_TOOL_CALLS = 5
 
@@ -50,20 +52,25 @@ def chat():
         model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
         openai_api_key=api_key,
         openai_api_base=os.environ.get("LLM_API_BASE", "https://api.deepinfra.com/v1/openai"),
-        temperature=0.4,
-        max_tokens=1500,
+        temperature=0.3,
+        max_tokens=2000,
     )
     llm_with_tools = llm.bind_tools(LINKY_TOOLS)
 
     lc_messages = [
         SystemMessage(content=SYSTEM_PROMPT.format(today=today, page_context=page_context)),
     ]
-    for msg in messages[-10:]:
+    history = messages[-10:]
+    for i, msg in enumerate(history):
         role = msg.get("role", "user")
         content = msg.get("content", "")
         if role == "user":
             lc_messages.append(HumanMessage(content=content))
         elif role == "assistant":
+            # Truncate older assistant messages to avoid the model parroting them
+            is_last = i == len(history) - 1
+            if not is_last and len(content) > 500:
+                content = content[:500] + "\n[truncated]"
             lc_messages.append(AIMessage(content=content))
 
     sse_publish("chat", "thinking", {})

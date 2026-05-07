@@ -258,7 +258,7 @@ export default function Dashboard() {
                     </Link>
                   ))}
                   <span>{a.source_name}</span>
-                  <span>{new Date(a.published_at || a.fetched_at || "").toLocaleTimeString()}</span>
+                  {(a.published_at || a.fetched_at) && <span>{new Date(a.published_at || a.fetched_at!).toLocaleTimeString()}</span>}
                 </div>
               </div>
               ))}
