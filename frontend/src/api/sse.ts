@@ -81,17 +81,10 @@ export function useSSE() {
       } catch { /* ignore */ }
     });
 
-    es.addEventListener("reports:generated", (e: MessageEvent) => {
+    es.addEventListener("reports:generated", () => {
       if (!ready.current) return;
-      try {
-        const data = JSON.parse(e.data);
-        if (data.report) {
-          queryClient.setQueryData(["latestReport"], data.report);
-          queryClient.setQueryData<unknown[]>(["reports"], (old) =>
-            old ? [data.report, ...old] : [data.report]
-          );
-        }
-      } catch { /* ignore */ }
+      queryClient.invalidateQueries({ queryKey: ["latestReport"] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
     });
 
     es.addEventListener("prices:update", (e: MessageEvent) => {
