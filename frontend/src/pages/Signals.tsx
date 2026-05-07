@@ -1,6 +1,7 @@
 import { useSignals, useSignalMatches, useSignalWeights } from "../api/signals";
 import { useAppStore } from "../store";
 import SignalBadge from "../components/SignalBadge";
+import EmptyState from "../components/EmptyState";
 
 export default function Signals() {
   const activeType = useAppStore((s) => s.activeSignalType);
@@ -42,9 +43,12 @@ export default function Signals() {
       <section>
         <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Catalog</h3>
         <div className="h-px bg-stone-900 mb-4" />
+        {(!signals || signals.length === 0) ? (
+          <EmptyState message="No signals registered yet. Signals are created when the detection engine first runs." />
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {signals
-            ?.filter((s) => !activeType || s.signal_type === activeType)
+            .filter((s) => !activeType || s.signal_type === activeType)
             .map((s) => (
               <div key={s.id} className="border-b border-stone-200 pb-4">
                 <div className="flex items-center justify-between mb-1">
@@ -63,6 +67,7 @@ export default function Signals() {
               </div>
             ))}
         </div>
+        )}
       </section>
 
       <section>
@@ -99,16 +104,20 @@ export default function Signals() {
       <section>
         <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Recent Matches</h3>
         <div className="h-px bg-stone-900 mb-4" />
-        <div className="space-y-2">
-          {matches?.map((m) => (
-            <div key={m.id} className="flex items-center gap-4 border-b border-stone-200 pb-3 text-sm font-sans">
-              <span className="text-stone-700 font-medium w-40">{m.signal}</span>
-              <span className="font-serif font-bold text-stone-900 w-16">{m.company}</span>
-              <SignalBadge direction={m.direction} confidence={m.confidence} />
-              <span className="text-stone-400 text-xs ml-auto">{new Date(m.detected_at).toLocaleString()}</span>
-            </div>
-          ))}
-        </div>
+        {(!matches || matches.length === 0) ? (
+          <EmptyState message="No signal matches yet. Matches appear as the engine detects patterns in market and article data." />
+        ) : (
+          <div className="space-y-2">
+            {matches.map((m) => (
+              <div key={m.id} className="flex items-center gap-4 border-b border-stone-200 pb-3 text-sm font-sans">
+                <span className="text-stone-700 font-medium w-40">{m.signal}</span>
+                <span className="font-serif font-bold text-stone-900 w-16">{m.company}</span>
+                <SignalBadge direction={m.direction} confidence={m.confidence} />
+                <span className="text-stone-400 text-xs ml-auto">{new Date(m.detected_at).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

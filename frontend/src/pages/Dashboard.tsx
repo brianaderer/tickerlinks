@@ -4,6 +4,8 @@ import { usePredictions } from "../api/predictions";
 import { useSignalMatches } from "../api/signals";
 import { useArticles, useSentiment } from "../api/articles";
 import SignalBadge from "../components/SignalBadge";
+import AiGenerated from "../components/AiGenerated";
+import EmptyState from "../components/EmptyState";
 
 export default function Dashboard() {
   const { data: report } = useLatestReport();
@@ -28,6 +30,11 @@ export default function Dashboard() {
       {/* Above the fold: Lead + Secondary */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 border-t-2 border-stone-900">
         {/* Lead story */}
+        {!lead && !secondary?.length && (
+          <div className="lg:col-span-12 py-6">
+            <EmptyState message="No predictions yet. The signal engine will generate stories once data flows through the pipeline." />
+          </div>
+        )}
         {lead && (
           <div className="lg:col-span-7 py-6 pr-0 lg:pr-8 lg:border-r border-stone-300">
             <span className="text-xs font-sans font-semibold uppercase tracking-wider text-stone-400">Top Story</span>
@@ -41,9 +48,11 @@ export default function Dashboard() {
               Confidence rated at {(lead.confidence * 100).toFixed(0)}% &bull; {lead.signal_count} contributing signals
               {lead.target_date && <> &bull; Target: {new Date(lead.target_date).toLocaleDateString()}</>}
             </p>
-            <p className="mt-4 font-body text-base text-stone-700 leading-relaxed">
-              {lead.reasoning}
-            </p>
+            <AiGenerated label="AI reasoning" className="mt-4">
+              <p className="font-body text-base text-stone-700 leading-relaxed">
+                {lead.reasoning}
+              </p>
+            </AiGenerated>
             <Link
               to="/companies/$symbol"
               params={{ symbol: lead.company }}
@@ -62,7 +71,9 @@ export default function Dashboard() {
                 <h3 className="font-serif text-xl font-bold text-stone-900 group-hover:underline leading-snug">
                   {p.company}: {p.direction === "bullish" ? "Gains Expected" : "Losses Anticipated"} on {p.signal_count}-Signal Consensus
                 </h3>
-                <p className="mt-2 font-body text-sm text-stone-600 leading-relaxed line-clamp-3">{p.reasoning}</p>
+                <AiGenerated label="AI reasoning" className="mt-2">
+                  <p className="font-body text-sm text-stone-600 leading-relaxed line-clamp-3">{p.reasoning}</p>
+                </AiGenerated>
                 <div className="mt-2 flex items-center gap-3">
                   <SignalBadge direction={p.direction} confidence={p.confidence} />
                   <span className="text-xs text-stone-400 font-sans">{new Date(p.created_at).toLocaleTimeString()}</span>
@@ -77,13 +88,22 @@ export default function Dashboard() {
       <div className="border-t border-stone-300 my-2" />
 
       {/* Market Brief */}
+      {!report && (
+        <section className="py-6 border-b border-stone-300">
+          <h3 className="font-serif text-lg font-bold text-stone-900 mb-1">Market Brief</h3>
+          <div className="h-px bg-stone-900 mb-4" />
+          <EmptyState message="No reports generated yet. The hourly report will appear here after the first Celery beat cycle." />
+        </section>
+      )}
       {report && (
         <section className="py-6 border-b border-stone-300">
           <h3 className="font-serif text-lg font-bold text-stone-900 mb-1">Market Brief</h3>
           <p className="text-xs font-sans text-stone-400 mb-3">
             {report.report_type.toUpperCase()} &bull; {new Date(report.generated_at).toLocaleString()}
           </p>
-          <p className="font-body text-sm text-stone-700 leading-relaxed">{report.summary}</p>
+          <AiGenerated label="AI summary">
+            <p className="font-body text-sm text-stone-700 leading-relaxed">{report.summary}</p>
+          </AiGenerated>
           {report.data && (
             <div className="mt-4 flex gap-6 font-sans">
               {report.data.total_signals != null && (
@@ -121,33 +141,40 @@ export default function Dashboard() {
         <div className="lg:pr-6 lg:border-r border-stone-300">
           <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Signal Wire</h3>
           <div className="h-px bg-stone-900 mb-4" />
-          <div className="space-y-4">
-            {matches?.map((m) => (
-              <div key={m.id} className="border-b border-stone-200 pb-3">
-                <div className="flex items-center justify-between mb-1">
-                  <Link
-                    to="/companies/$symbol"
-                    params={{ symbol: m.company }}
-                    className="font-serif font-bold text-stone-900 hover:underline"
-                  >
-                    {m.company}
-                  </Link>
-                  <SignalBadge direction={m.direction} confidence={m.confidence} />
+          {(!matches || matches.length === 0) ? (
+            <EmptyState message="No signal matches detected yet. Signals fire as market data and articles are processed." />
+          ) : (
+            <div className="space-y-4">
+              {matches.map((m) => (
+                <div key={m.id} className="border-b border-stone-200 pb-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <Link
+                      to="/companies/$symbol"
+                      params={{ symbol: m.company }}
+                      className="font-serif font-bold text-stone-900 hover:underline"
+                    >
+                      {m.company}
+                    </Link>
+                    <SignalBadge direction={m.direction} confidence={m.confidence} />
+                  </div>
+                  <p className="font-body text-sm text-stone-600">{m.signal}</p>
+                  <span className="text-xs text-stone-400 font-sans">{m.signal_type} &bull; {new Date(m.detected_at).toLocaleTimeString()}</span>
                 </div>
-                <p className="font-body text-sm text-stone-600">{m.signal}</p>
-                <span className="text-xs text-stone-400 font-sans">{m.signal_type} &bull; {new Date(m.detected_at).toLocaleTimeString()}</span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Col 2: Sentiment Desk */}
         <div className="lg:px-6 lg:border-r border-stone-300 mt-6 lg:mt-0">
           <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Sentiment Desk</h3>
           <div className="h-px bg-stone-900 mb-4" />
-          <div className="space-y-3">
-            {sentiment?.map((s) => (
-              <div key={s.symbol} className="border-b border-stone-200 pb-3">
+          {(!sentiment || sentiment.length === 0) ? (
+            <EmptyState message="No sentiment data yet. Scores appear once articles are fetched and analyzed." />
+          ) : (
+            <div className="space-y-3">
+              {sentiment.map((s) => (
+                <div key={s.symbol} className="border-b border-stone-200 pb-3">
                 <div className="flex items-center justify-between mb-1.5">
                   <Link
                     to="/companies/$symbol"
@@ -168,8 +195,9 @@ export default function Dashboard() {
                 </div>
                 <span className="text-xs text-stone-400 font-sans mt-1 block">{s.article_count} articles</span>
               </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           {/* Additional predictions */}
           {rest && rest.length > 0 && (
@@ -183,7 +211,9 @@ export default function Dashboard() {
                       <span className="font-serif font-bold text-stone-900 group-hover:underline">{p.company}</span>
                       <SignalBadge direction={p.direction} />
                     </div>
-                    <p className="font-body text-sm text-stone-600 line-clamp-2">{p.reasoning}</p>
+                    <AiGenerated label="AI reasoning">
+                      <p className="font-body text-sm text-stone-600 line-clamp-2">{p.reasoning}</p>
+                    </AiGenerated>
                   </Link>
                 </div>
               ))}
@@ -195,11 +225,18 @@ export default function Dashboard() {
         <div className="lg:pl-6 mt-6 lg:mt-0">
           <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Headlines</h3>
           <div className="h-px bg-stone-900 mb-4" />
-          <div className="space-y-4">
-            {articles?.slice(0, 6).map((a) => (
+          {(!articles || articles.length === 0) ? (
+            <EmptyState message="No articles yet. Headlines appear once RSS feeds are polled." />
+          ) : (
+            <div className="space-y-4">
+              {articles.slice(0, 6).map((a) => (
               <div key={a.id} className="border-b border-stone-200 pb-3">
                 <p className="font-serif text-sm font-bold text-stone-900 leading-snug">{a.title}</p>
-                {a.summary && <p className="font-body text-xs text-stone-500 mt-1 line-clamp-2">{a.summary}</p>}
+                {a.summary && (
+                  <AiGenerated label="AI summary" className="mt-1">
+                    <p className="font-body text-xs text-stone-500 line-clamp-2">{a.summary}</p>
+                  </AiGenerated>
+                )}
                 <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans">
                   {a.company && (
                     <Link
@@ -214,8 +251,9 @@ export default function Dashboard() {
                   {a.published_at && <span>{new Date(a.published_at).toLocaleTimeString()}</span>}
                 </div>
               </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

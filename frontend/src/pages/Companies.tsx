@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useCompanies } from "../api/companies";
 import { useIndexes } from "../api/indices";
 import CompanyTable from "../components/CompanyTable";
+import EmptyState from "../components/EmptyState";
 
 export default function Companies() {
   const [indexFilter, setIndexFilter] = useState<string>("");
@@ -26,9 +27,11 @@ export default function Companies() {
 
       {isLoading ? (
         <p className="text-stone-400 font-sans">Loading...</p>
-      ) : companies ? (
+      ) : companies && companies.length > 0 ? (
         <CompanyTable companies={companies} />
-      ) : null}
+      ) : (
+        <EmptyState message="No companies in the watchlist yet. Seed the database to populate this table." />
+      )}
     </div>
   );
 }

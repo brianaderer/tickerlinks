@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useArticles, useSentiment } from "../api/articles";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import AiGenerated from "../components/AiGenerated";
+import EmptyState from "../components/EmptyState";
 
 export default function Articles() {
   const [search, setSearch] = useState("");
@@ -54,13 +56,20 @@ export default function Articles() {
       <section>
         <h3 className="font-serif text-base font-bold text-stone-900 mb-1">News Wire</h3>
         <div className="h-px bg-stone-900 mb-4" />
+        {(!filtered || filtered.length === 0) ? (
+          <EmptyState message={search ? "No articles match your search." : "No articles yet. Articles appear once RSS feeds are polled."} />
+        ) : (
         <div className="space-y-4">
-          {filtered?.map((a) => (
+          {filtered.map((a) => (
             <div key={a.id} className="border-b border-stone-200 pb-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="font-serif text-base font-bold text-stone-900 leading-snug">{a.title}</p>
-                  {a.summary && <p className="font-body text-sm text-stone-600 mt-1 line-clamp-2">{a.summary}</p>}
+                  {a.summary && (
+                    <AiGenerated label="AI summary" className="mt-1">
+                      <p className="font-body text-sm text-stone-600 line-clamp-2">{a.summary}</p>
+                    </AiGenerated>
+                  )}
                 </div>
                 {a.company && (
                   <Link
@@ -79,6 +88,7 @@ export default function Articles() {
             </div>
           ))}
         </div>
+        )}
       </section>
     </div>
   );

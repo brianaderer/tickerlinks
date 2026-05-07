@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { usePredictions } from "../api/predictions";
 import PredictionCard from "../components/PredictionCard";
+import EmptyState from "../components/EmptyState";
 
 export default function Predictions() {
   const [dirFilter, setDirFilter] = useState<string>("");
@@ -27,10 +28,12 @@ export default function Predictions() {
 
       {isLoading ? (
         <p className="text-stone-400 font-sans">Loading...</p>
-      ) : (
+      ) : predictions && predictions.length > 0 ? (
         <div className="columns-1 md:columns-2 xl:columns-3 gap-6 space-y-4">
-          {predictions?.map((p) => <PredictionCard key={p.id} prediction={p} />)}
+          {predictions.map((p) => <PredictionCard key={p.id} prediction={p} />)}
         </div>
+      ) : (
+        <EmptyState message="No predictions yet. The engine generates predictions when signals are detected across your watchlist." />
       )}
     </div>
   );

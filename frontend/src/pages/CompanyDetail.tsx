@@ -6,6 +6,7 @@ import { useArticles } from "../api/articles";
 import PriceChart from "../components/PriceChart";
 import PredictionCard from "../components/PredictionCard";
 import SignalBadge from "../components/SignalBadge";
+import AiGenerated from "../components/AiGenerated";
 
 export default function CompanyDetail() {
   const { symbol } = useParams({ strict: false });
@@ -64,7 +65,11 @@ export default function CompanyDetail() {
             {articles.map((a) => (
               <div key={a.id} className="border-b border-stone-200 pb-3">
                 <p className="font-serif text-sm font-bold text-stone-900">{a.title}</p>
-                {a.summary && <p className="font-body text-xs text-stone-500 mt-1 line-clamp-2">{a.summary}</p>}
+                {a.summary && (
+                  <AiGenerated label="AI summary" className="mt-1">
+                    <p className="font-body text-xs text-stone-500 line-clamp-2">{a.summary}</p>
+                  </AiGenerated>
+                )}
                 <div className="flex gap-3 mt-1.5 text-xs text-stone-400 font-sans">
                   <span>{a.source_name}</span>
                   {a.published_at && <span>{new Date(a.published_at).toLocaleString()}</span>}

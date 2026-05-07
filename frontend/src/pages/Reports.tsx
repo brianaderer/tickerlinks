@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useReports, useReport } from "../api/reports";
 import ReportCard from "../components/ReportCard";
+import AiGenerated from "../components/AiGenerated";
+import EmptyState from "../components/EmptyState";
 
 export default function Reports() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -15,6 +17,9 @@ export default function Reports() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-4">
+          {(!reports || reports.length === 0) && (
+            <EmptyState message="No reports generated yet. Hourly reports are created by Celery beat." />
+          )}
           {reports?.map((r) => (
             <button
               key={r.id}
@@ -35,7 +40,9 @@ export default function Reports() {
                 <span className="text-xs font-sans font-semibold uppercase tracking-wider text-stone-400">{detail.report_type}</span>
                 <span className="text-xs text-stone-400 font-sans">{new Date(detail.generated_at).toLocaleString()}</span>
               </div>
-              <p className="font-body text-sm text-stone-700 leading-relaxed">{detail.summary}</p>
+              <AiGenerated label="AI summary">
+                <p className="font-body text-sm text-stone-700 leading-relaxed">{detail.summary}</p>
+              </AiGenerated>
               {detail.data && (
                 <div className="space-y-2">
                   <h4 className="text-xs font-sans font-semibold text-stone-400 uppercase tracking-wider">Data</h4>
