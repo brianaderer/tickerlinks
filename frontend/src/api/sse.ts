@@ -109,6 +109,12 @@ export function useSSE() {
     // Chat events are handled by the fetch response in ChatDrawer.
     // SSE chat events are only used for tool-call status indicators.
 
+    es.addEventListener("trends:updated", () => {
+      if (!ready.current) return;
+      queryClient.invalidateQueries({ queryKey: ["trends"] });
+      queryClient.invalidateQueries({ queryKey: ["articlesBatch"] });
+    });
+
     es.addEventListener("chat:tool_call", (e: MessageEvent) => {
       if (!ready.current) return;
       try {
