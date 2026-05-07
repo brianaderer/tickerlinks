@@ -55,9 +55,26 @@ def run_company_prediction(company_id: int):
     result = run_analysis(company_ids=[company_id], skip_predict=False)
     logger.info("Manual prediction complete for %s: %s", symbol, result)
 
+    prediction_data = None
+    pred = Prediction.query.filter_by(company_id=company_id).order_by(
+        Prediction.created_at.desc()
+    ).first()
+    if pred:
+        prediction_data = {
+            "id": pred.id,
+            "company": symbol,
+            "direction": pred.direction,
+            "confidence": float(pred.confidence),
+            "magnitude": float(pred.magnitude) if pred.magnitude else None,
+            "reasoning": pred.reasoning,
+            "target_date": pred.target_date.isoformat() if pred.target_date else None,
+            "created_at": pred.created_at.isoformat(),
+            "signal_count": len(pred.signal_matches),
+        }
+
     sse_publish("signals", "analysis_complete", {
         "mode": "manual",
         "symbol": symbol,
-        "predictions": result.get("strong_predictions", 0) if isinstance(result, dict) else 0,
+        "prediction": prediction_data,
     })
     return result

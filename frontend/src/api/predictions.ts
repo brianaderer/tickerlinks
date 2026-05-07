@@ -13,6 +13,8 @@ export function usePredictions(company?: string, direction?: string) {
       const qs = params.toString();
       return apiFetch<Prediction[]>(`/predictions${qs ? `?${qs}` : ""}`);
     },
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 }
 

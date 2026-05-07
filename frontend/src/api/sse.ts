@@ -74,14 +74,17 @@ export function useSSE() {
         const data = JSON.parse(e.data);
         if (data.mode === "manual" && data.symbol) {
           useAppStore.getState().removePendingPrediction(data.symbol);
-          queryClient.invalidateQueries({ queryKey: ["predictions", data.symbol] });
-          queryClient.invalidateQueries({ queryKey: ["predictions"] });
-        }
-        if (data.predictions) {
-          queryClient.setQueryData(["predictions"], data.predictions);
-        }
-        if (data.matches) {
-          queryClient.setQueryData(["signalMatches"], data.matches);
+          if (data.prediction) {
+            queryClient.setQueryData(["predictions", data.symbol], (old: unknown[] | undefined) => {
+              const existing = (old || []) as any[];
+              return [data.prediction, ...existing.filter((p: any) => p.id !== data.prediction.id)];
+            });
+            queryClient.setQueryData(["predictions", undefined, undefined], (old: unknown[] | undefined) => {
+              if (!old) return old;
+              const existing = old as any[];
+              return [data.prediction, ...existing.filter((p: any) => p.company !== data.symbol)];
+            });
+          }
         }
       } catch { /* ignore */ }
     });
