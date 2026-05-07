@@ -74,13 +74,14 @@ export default function Dashboard() {
         const lead = stories[0];
         const secondary = stories.slice(1, 4);
         return (
-          <div className="border-t-2 border-stone-900 py-6">
-            <span className="text-xs font-sans font-semibold uppercase tracking-wider text-stone-400">Top Stories</span>
+          <div className="py-6">
+            <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Top Stories</h3>
+            <div className="h-px bg-stone-900 mb-4" />
             {!lead ? (
               <EmptyState message="No articles yet. Top stories appear once the trending agent runs." />
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-0 mt-4">
-                <div className="lg:col-span-7 pr-0 lg:pr-8 lg:border-r border-stone-300">
+                <div className="lg:col-span-7 pr-0 lg:pr-8 lg:border-r border-stone-300 flex flex-col justify-center">
                   {trendByArticle.get(lead.id) && (
                     <span className="text-[11px] font-sans font-semibold uppercase tracking-wider text-stone-400 mb-2 block">
                       {trendByArticle.get(lead.id)}
