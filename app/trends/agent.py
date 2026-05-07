@@ -15,7 +15,7 @@ from app.trends.prompts import ANALYZE_SYSTEM, SYNTHESIZE_SYSTEM
 
 logger = logging.getLogger(__name__)
 
-MAX_RESEARCH_CALLS = 5
+MAX_RESEARCH_CALLS = 2
 
 
 class TrendState(TypedDict, total=False):
@@ -100,7 +100,7 @@ def gather_topics() -> list[dict]:
 
 def _format_topic_data(articles: list[dict]) -> str:
     lines = []
-    for a in articles[:200]:
+    for a in articles[:50]:
         topics = ", ".join(a["topics"][:5]) if a["topics"] else "none"
         companies = ", ".join(a["companies"][:5]) if a["companies"] else "none"
         lines.append(
@@ -111,7 +111,7 @@ def _format_topic_data(articles: list[dict]) -> str:
 
 
 def analyze_trends(articles: list[dict], today: str) -> list[dict]:
-    llm = _get_llm(max_tokens=3000)
+    llm = _get_llm(max_tokens=2000)
     if not llm:
         logger.warning("No LLM configured, skipping trend analysis")
         return []
@@ -122,10 +122,10 @@ def analyze_trends(articles: list[dict], today: str) -> list[dict]:
     messages = [
         SystemMessage(content=ANALYZE_SYSTEM.format(today=today)),
         HumanMessage(content=(
-            f"Here are {len(articles)} articles from the last 7 days with their topic tags:\n\n"
+            f"Here are the {min(len(articles), 50)} most recent articles from the last 7 days:\n\n"
             f"{topic_data}\n\n"
-            f"Identify the 10 most significant trends. Use the research_company tool "
-            f"to dig deeper on the most impactful topics (up to 5 calls)."
+            f"Identify the 10 most significant trends. You may use the research_company tool "
+            f"up to {MAX_RESEARCH_CALLS} times if needed. /no_think"
         )),
     ]
 
@@ -185,7 +185,7 @@ def synthesize_trends(candidates: list[dict], articles: list[dict], today: str) 
 
     messages = [
         SystemMessage(content=SYNTHESIZE_SYSTEM.format(today=today)),
-        HumanMessage(content=f"Write impact statements for these 10 trends:\n\n{candidates_text}"),
+        HumanMessage(content=f"Write impact statements for these 10 trends:\n\n{candidates_text}\n/no_think"),
     ]
 
     response = llm.invoke(messages)

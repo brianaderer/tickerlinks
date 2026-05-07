@@ -1,5 +1,5 @@
 import { useParams, Link } from "@tanstack/react-router";
-import { useCompanyPrices } from "../api/companies";
+import { useCompany, useCompanyPrices } from "../api/companies";
 import { useSignalMatches } from "../api/signals";
 import { usePredictions } from "../api/predictions";
 import { useArticles } from "../api/articles";
@@ -10,6 +10,7 @@ import { decodeHtml } from "../utils";
 
 export default function CompanyDetail() {
   const { symbol } = useParams({ strict: false });
+  const company = useCompany(symbol!);
   const { data: prices, isLoading: pricesLoading } = useCompanyPrices(symbol!, 5000);
   const { data: matches, isLoading: matchesLoading } = useSignalMatches(symbol);
   const { data: predictions, isLoading: predsLoading } = usePredictions(symbol);
@@ -17,12 +18,29 @@ export default function CompanyDetail() {
 
   const loading = pricesLoading || matchesLoading || predsLoading || articlesLoading;
 
+  const companyHeader = (
+    <div className="border-b-2 border-stone-900 pb-3">
+      <h2 className="font-serif text-3xl font-black text-stone-900">{symbol}</h2>
+      {company && (
+        <div className="mt-1">
+          <p className="font-body text-base text-stone-600">{company.name}</p>
+          <div className="flex items-center gap-3 mt-1 text-xs font-sans text-stone-400">
+            {company.industry && <span>{company.industry}</span>}
+            {company.sector && company.industry && <span>&bull;</span>}
+            {company.sector && <span>{company.sector}</span>}
+          </div>
+          {company.description && (
+            <p className="font-body text-sm text-stone-500 mt-2 leading-relaxed">{company.description}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="space-y-8">
-        <div className="border-b-2 border-stone-900 pb-2">
-          <h2 className="font-serif text-3xl font-black text-stone-900">{symbol}</h2>
-        </div>
+        {companyHeader}
         <div className="flex items-center gap-3 py-12 justify-center">
           <div className="w-4 h-4 border-2 border-stone-300 border-t-stone-700 rounded-full animate-spin" />
           <span className="text-sm font-sans text-stone-400">Loading data...</span>
@@ -33,9 +51,7 @@ export default function CompanyDetail() {
 
   return (
     <div className="space-y-8">
-      <div className="border-b-2 border-stone-900 pb-2">
-        <h2 className="font-serif text-3xl font-black text-stone-900">{symbol}</h2>
-      </div>
+      {companyHeader}
 
       {prices && (
         <section>

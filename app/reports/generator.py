@@ -202,7 +202,7 @@ def _generate_summary(data: dict, now: datetime) -> str:
         openai_api_key=api_key,
         openai_api_base=os.environ.get("LLM_API_BASE", "https://api.deepinfra.com/v1/openai"),
         temperature=0.3,
-        max_tokens=600,
+        max_tokens=1500,
     )
 
     movers_str = ""

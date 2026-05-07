@@ -10,6 +10,11 @@ export function useCompanies(index?: string) {
   });
 }
 
+export function useCompany(symbol: string) {
+  const { data: companies } = useCompanies();
+  return companies?.find((c) => c.symbol === symbol) ?? null;
+}
+
 export function useCompanyPrices(symbol: string, limit = 100) {
   return useQuery({
     queryKey: ["prices", symbol, limit],
