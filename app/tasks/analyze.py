@@ -141,6 +141,7 @@ def run_company_prediction(company_id: int):
         existing.reasoning = pred_data.get("reasoning", "")
         existing.target_date = target
         existing.created_at = now
+        existing.signal_matches = matches
         db.session.commit()
         pred = existing
     else:
@@ -153,6 +154,7 @@ def run_company_prediction(company_id: int):
             target_date=target,
             created_at=now,
         )
+        pred.signal_matches = matches
         db.session.add(pred)
         db.session.commit()
 

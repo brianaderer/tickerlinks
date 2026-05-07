@@ -308,7 +308,6 @@ def list_predictions():
                 "signal_count": len(p.signal_matches),
             }
             for p in predictions
-            if len(p.signal_matches) > 0
         ]
     )
 
