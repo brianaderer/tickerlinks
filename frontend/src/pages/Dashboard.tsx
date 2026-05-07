@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import ReactMarkdown from "react-markdown";
 import { useLatestReport } from "../api/reports";
 import { usePredictions } from "../api/predictions";
 import { useSignalDigests } from "../api/signals";
@@ -49,11 +50,9 @@ export default function Dashboard() {
               Confidence rated at {(lead.confidence * 100).toFixed(0)}% &bull; {lead.signal_count} contributing signals
               {lead.target_date && <> &bull; Target: {new Date(lead.target_date).toLocaleDateString()}</>}
             </p>
-            <AiGenerated label="AI reasoning" className="mt-4">
-              <p className="font-body text-base text-stone-700 leading-relaxed">
-                {lead.reasoning}
-              </p>
-            </AiGenerated>
+            <p className="font-body text-base text-stone-700 leading-relaxed mt-4">
+              {lead.reasoning}
+            </p>
             <Link
               to="/companies/$symbol"
               params={{ symbol: lead.company }}
@@ -72,9 +71,7 @@ export default function Dashboard() {
                 <h3 className="font-serif text-xl font-bold text-stone-900 group-hover:underline leading-snug">
                   {p.company}: {p.direction === "bullish" ? "Gains Expected" : "Losses Anticipated"} on {p.signal_count}-Signal Consensus
                 </h3>
-                <AiGenerated label="AI reasoning" className="mt-2">
-                  <p className="font-body text-sm text-stone-600 leading-relaxed line-clamp-3">{p.reasoning}</p>
-                </AiGenerated>
+                <p className="font-body text-sm text-stone-600 leading-relaxed line-clamp-3 mt-2">{p.reasoning}</p>
                 <div className="mt-2 flex items-center gap-3">
                   <SignalBadge direction={p.direction} confidence={p.confidence} />
                   <span className="text-xs text-stone-400 font-sans">{new Date(p.created_at).toLocaleTimeString()}</span>
@@ -100,39 +97,11 @@ export default function Dashboard() {
         <section className="py-6 border-b border-stone-300">
           <h3 className="font-serif text-lg font-bold text-stone-900 mb-1">Market Brief</h3>
           <p className="text-xs font-sans text-stone-400 mb-3">
-            {report.report_type.toUpperCase()} &bull; {new Date(report.generated_at).toLocaleString()}
+            Updated {new Date(report.generated_at).toLocaleString()}
           </p>
-          <AiGenerated label="AI summary">
-            <p className="font-body text-sm text-stone-700 leading-relaxed">{report.summary}</p>
-          </AiGenerated>
-          {report.data && (
-            <div className="mt-4 flex gap-6 font-sans">
-              {report.data.total_signals != null && (
-                <div>
-                  <span className="text-2xl font-bold text-stone-900">{report.data.total_signals as number}</span>
-                  <span className="block text-xs text-stone-400 uppercase tracking-wider mt-0.5">Signals</span>
-                </div>
-              )}
-              {report.data.bullish != null && (
-                <div>
-                  <span className="text-2xl font-bold text-emerald-700">{report.data.bullish as number}</span>
-                  <span className="block text-xs text-stone-400 uppercase tracking-wider mt-0.5">Bullish</span>
-                </div>
-              )}
-              {report.data.bearish != null && (
-                <div>
-                  <span className="text-2xl font-bold text-red-700">{report.data.bearish as number}</span>
-                  <span className="block text-xs text-stone-400 uppercase tracking-wider mt-0.5">Bearish</span>
-                </div>
-              )}
-              {report.data.active_companies != null && (
-                <div>
-                  <span className="text-2xl font-bold text-stone-900">{report.data.active_companies as number}</span>
-                  <span className="block text-xs text-stone-400 uppercase tracking-wider mt-0.5">Tickers</span>
-                </div>
-              )}
-            </div>
-          )}
+          <div className="font-body text-sm text-stone-700 leading-relaxed prose prose-stone prose-sm max-w-none">
+            <ReactMarkdown>{report.summary}</ReactMarkdown>
+          </div>
         </section>
       )}
 
@@ -142,24 +111,30 @@ export default function Dashboard() {
         <div className="lg:pr-6 lg:border-r border-stone-300">
           <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Signal Wire</h3>
           <div className="h-px bg-stone-900 mb-4" />
-          {(!matches || matches.length === 0) ? (
-            <EmptyState message="No signal matches detected yet. Signals fire as market data and articles are processed." />
+          {(!digests || digests.length === 0) ? (
+            <EmptyState message="No signal digests yet. Digests appear after the signal engine aggregates matches." />
           ) : (
             <div className="space-y-4">
-              {matches.map((m) => (
-                <div key={m.id} className="border-b border-stone-200 pb-3">
+              {digests.map((d) => (
+                <div key={`${d.symbol}-${d.generated_at}`} className="border-b border-stone-200 pb-3">
                   <div className="flex items-center justify-between mb-1">
                     <Link
                       to="/companies/$symbol"
-                      params={{ symbol: m.company }}
+                      params={{ symbol: d.symbol }}
                       className="font-serif font-bold text-stone-900 hover:underline cursor-pointer"
                     >
-                      {m.company}
+                      {d.symbol}
                     </Link>
-                    <SignalBadge direction={m.direction} confidence={m.confidence} />
+                    <SignalBadge direction={d.direction} confidence={d.net_confidence} />
                   </div>
-                  <p className="font-body text-sm text-stone-600">{m.signal}</p>
-                  <span className="text-xs text-stone-400 font-sans">{m.signal_type} &bull; {new Date(m.detected_at).toLocaleTimeString()}</span>
+                  <AiGenerated label="AI digest" className="mt-1">
+                    <p className="font-body text-sm text-stone-600">{d.digest}</p>
+                  </AiGenerated>
+                  <div className="flex items-center gap-2 mt-1.5 text-xs text-stone-400 font-sans">
+                    <span>{d.match_count} signal{d.match_count !== 1 ? "s" : ""}</span>
+                    <span>&bull;</span>
+                    <span>{new Date(d.generated_at).toLocaleTimeString()}</span>
+                  </div>
                 </div>
               ))}
             </div>

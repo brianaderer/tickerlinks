@@ -3,8 +3,10 @@ import Sidebar from "./Sidebar";
 import ChatDrawer from "./ChatDrawer";
 import { useAppStore } from "../store";
 import { HiOutlineBars3 } from "react-icons/hi2";
+import { useSSE } from "../api/sse";
 
 export default function Layout() {
+  useSSE();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
 

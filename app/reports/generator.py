@@ -13,20 +13,27 @@ from app.signals.llm_utils import parse_llm_json
 
 logger = logging.getLogger(__name__)
 
-SUMMARY_PROMPT = """You are a senior market analyst writing an hourly briefing. Based on the data below, write a concise 3-5 sentence executive summary covering the key market movements, notable signals, and any predictions worth highlighting.
+SUMMARY_PROMPT = """You are a senior market analyst writing a rolling 24-hour market brief. Today is {today}. This brief is updated every 15 minutes.
 
-Be specific — name tickers, cite numbers, and highlight what's actionable.
+RULES:
+- Write 1-2 natural paragraphs, newspaper-style. No bullet points, no headers, no lists.
+- Use **bold** for ticker symbols and key numbers.
+- Emphasize the most recent developments — what happened in the last few hours matters more than yesterday. But weave in the full-day context.
+- Be specific: name tickers, cite percentage moves, mention signal counts.
+- If there are notable divergences (bullish signals on a stock with bearish sentiment, or vice versa), call them out.
+- End with one actionable insight or thing to watch.
 
+DATA:
 {data}"""
 
 
 def generate_hourly_report() -> Report:
     now = datetime.now(timezone.utc)
-    one_hour_ago = now - timedelta(hours=1)
+    window = now - timedelta(hours=24)
 
-    movers = _get_top_movers(one_hour_ago)
-    signals = _get_recent_signals(one_hour_ago)
-    predictions = _get_recent_predictions(one_hour_ago)
+    movers = _get_top_movers(window)
+    signals = _get_recent_signals(window)
+    predictions = _get_latest_predictions()
     indices = _get_article_indices_snapshot()
 
     data = {
@@ -36,7 +43,19 @@ def generate_hourly_report() -> Report:
         "article_indices": indices,
     }
 
-    summary = _generate_summary(data)
+    summary = _generate_summary(data, now)
+
+    existing = Report.query.filter_by(report_type="hourly").order_by(
+        Report.generated_at.desc()
+    ).first()
+
+    if existing:
+        existing.generated_at = now
+        existing.summary = summary
+        existing.data = data
+        db.session.commit()
+        logger.info("Updated hourly report #%d", existing.id)
+        return existing
 
     report = Report(
         report_type="hourly",
@@ -46,9 +65,7 @@ def generate_hourly_report() -> Report:
     )
     db.session.add(report)
     db.session.commit()
-
-    logger.info("Generated hourly report #%d: %d movers, %d signals, %d predictions",
-                report.id, len(movers), len(signals), len(predictions))
+    logger.info("Generated hourly report #%d", report.id)
     return report
 
 
@@ -91,8 +108,8 @@ def _get_recent_signals(since: datetime) -> list[dict]:
     matches = (
         SignalMatch.query
         .filter(SignalMatch.detected_at >= since)
-        .order_by(SignalMatch.confidence.desc())
-        .limit(50)
+        .order_by(SignalMatch.detected_at.desc())
+        .limit(100)
         .all()
     )
 
@@ -109,12 +126,24 @@ def _get_recent_signals(since: datetime) -> list[dict]:
     ]
 
 
-def _get_recent_predictions(since: datetime) -> list[dict]:
+def _get_latest_predictions() -> list[dict]:
+    from sqlalchemy import func
+    latest_subq = (
+        db.session.query(
+            Prediction.company_id,
+            func.max(Prediction.created_at).label("max_created"),
+        )
+        .group_by(Prediction.company_id)
+        .subquery()
+    )
+
     preds = (
-        Prediction.query
-        .filter(Prediction.created_at >= since)
+        Prediction.query.join(
+            latest_subq,
+            (Prediction.company_id == latest_subq.c.company_id)
+            & (Prediction.created_at == latest_subq.c.max_created),
+        )
         .order_by(Prediction.confidence.desc())
-        .limit(20)
         .all()
     )
 
@@ -123,8 +152,10 @@ def _get_recent_predictions(since: datetime) -> list[dict]:
             "company": p.company.symbol,
             "direction": p.direction,
             "confidence": p.confidence,
-            "reasoning": p.reasoning,
+            "magnitude": p.magnitude,
+            "reasoning": (p.reasoning or "")[:200],
             "signal_count": len(p.signal_matches),
+            "updated_at": p.created_at.isoformat(),
         }
         for p in preds
     ]
@@ -161,7 +192,7 @@ def _get_article_indices_snapshot() -> dict:
         return {}
 
 
-def _generate_summary(data: dict) -> str:
+def _generate_summary(data: dict, now: datetime) -> str:
     api_key = os.environ.get("DEEPINFRA_API_KEY", "")
     if not api_key:
         return _fallback_summary(data)
@@ -171,44 +202,68 @@ def _generate_summary(data: dict) -> str:
         openai_api_key=api_key,
         openai_api_base=os.environ.get("LLM_API_BASE", "https://api.deepinfra.com/v1/openai"),
         temperature=0.3,
-        max_tokens=500,
+        max_tokens=600,
     )
 
     movers_str = ""
-    for m in data.get("top_movers", [])[:5]:
-        movers_str += f"  {m['symbol']}: {m['change_pct']:+.2f}% (${m['close']})\n"
+    for m in data.get("top_movers", [])[:8]:
+        movers_str += f"  {m['symbol']}: {m['change_pct']:+.2f}% (${m['close']:.2f})\n"
+
+    signals = data.get("signals", [])
+    by_company: dict[str, list] = {}
+    for s in signals:
+        by_company.setdefault(s["company"], []).append(s)
 
     signals_str = ""
-    for s in data.get("signals", [])[:10]:
-        signals_str += f"  {s['company']} — {s['signal']} ({s['direction']}, {s['confidence']:.0%})\n"
+    for sym, sigs in sorted(by_company.items(), key=lambda x: -len(x[1]))[:8]:
+        bullish = [s for s in sigs if s["direction"] == "bullish"]
+        bearish = [s for s in sigs if s["direction"] == "bearish"]
+        latest_time = sigs[0]["detected_at"][:16]
+        signals_str += (
+            f"  {sym}: {len(bullish)} bullish, {len(bearish)} bearish "
+            f"(latest: {latest_time})\n"
+        )
+        for s in sigs[:3]:
+            signals_str += f"    - {s['signal']} ({s['direction']}, {s['confidence']:.0%}) at {s['detected_at'][:16]}\n"
 
     preds_str = ""
-    for p in data.get("predictions", [])[:5]:
-        preds_str += f"  {p['company']} — {p['direction']} ({p['confidence']:.0%}): {p['reasoning'][:100]}\n"
+    for p in data.get("predictions", [])[:6]:
+        mag = f", magnitude {p['magnitude']:.0%}" if p.get("magnitude") else ""
+        preds_str += (
+            f"  {p['company']}: {p['direction']} ({p['confidence']:.0%}{mag}) "
+            f"— {p['reasoning'][:120]}\n"
+        )
 
     indices = data.get("article_indices", {})
     sentiment_str = ""
-    for sym, s in list(indices.get("top_sentiment", {}).items())[:5]:
-        sentiment_str += f"  {sym}: score={s['score']}, mentions={s['total_mentions']}\n"
+    for sym, s in list(indices.get("top_sentiment", {}).items())[:6]:
+        sentiment_str += f"  {sym}: score={s['score']:+.3f} ({s['total_mentions']} mentions, {s['bullish']}B/{s['bearish']}b/{s['neutral']}N)\n"
 
-    context = f"""TOP MOVERS:
-{movers_str or '  None'}
+    spikes_str = ""
+    for sym, v in list(indices.get("mention_spikes", {}).items())[:5]:
+        spikes_str += f"  {sym}: {v.get('count', 0)} mentions (rate of change: {v.get('rate_of_change', 0):+.1f}x)\n"
 
-SIGNALS FIRED:
-{signals_str or '  None'}
+    context = f"""PRICE MOVERS (24h):
+{movers_str or '  No significant movers'}
 
-PREDICTIONS:
-{preds_str or '  None'}
+SIGNALS BY COMPANY (24h, most active first):
+{signals_str or '  No signals'}
+
+CURRENT PREDICTIONS:
+{preds_str or '  No predictions'}
 
 ARTICLE SENTIMENT:
-{sentiment_str or '  None'}"""
+{sentiment_str or '  No sentiment data'}
+
+MENTION VELOCITY SPIKES:
+{spikes_str or '  No spikes'}"""
 
     try:
         response = llm.invoke([
-            SystemMessage(content="You are a senior market analyst. Write concise, data-driven briefings."),
-            HumanMessage(content=SUMMARY_PROMPT.format(data=context)),
+            SystemMessage(content="You are a senior market analyst. Write concise, data-driven briefings. No preamble."),
+            HumanMessage(content=SUMMARY_PROMPT.format(today=now.strftime("%Y-%m-%d %H:%M UTC"), data=context)),
         ])
-        text = re.sub(r"<think>.*?</think>", "", response.content, flags=re.DOTALL).strip()
+        text = re.sub(r"<think>[\s\S]*?</think>", "", response.content).strip()
         return text
     except Exception:
         logger.exception("LLM summary generation failed")
@@ -223,9 +278,10 @@ def _fallback_summary(data: dict) -> str:
     parts = []
     if movers:
         top = movers[0]
-        parts.append(f"Top mover: {top['symbol']} at {top['change_pct']:+.2f}%.")
-    parts.append(f"{len(signals)} signals fired across {len(set(s['company'] for s in signals))} companies.")
+        parts.append(f"**{top['symbol']}** leads movers at {top['change_pct']:+.2f}%.")
+    companies = set(s["company"] for s in signals)
+    parts.append(f"{len(signals)} signals fired across **{len(companies)}** companies in the last 24 hours.")
     if preds:
-        parts.append(f"{len(preds)} predictions generated.")
+        parts.append(f"{len(preds)} active predictions.")
 
     return " ".join(parts)

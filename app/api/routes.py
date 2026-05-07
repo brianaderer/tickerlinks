@@ -273,6 +273,55 @@ def list_predictions():
     )
 
 
+@bp.route("/articles/search/text")
+def text_search_articles():
+    """Fast text search via Typesense (no embeddings) for keystroke-level queries."""
+    query = request.args.get("q", "").strip()
+    if not query:
+        return jsonify([])
+
+    n = request.args.get("limit", 20, type=int)
+
+    from app.articles.processor import get_typesense_client, ensure_collection, COLLECTION_NAME
+    client = get_typesense_client()
+    ensure_collection()
+
+    search_params = {
+        "q": query,
+        "query_by": "title,document",
+        "query_by_weights": "3,1",
+        "per_page": n * 3,
+        "include_fields": "article_id,title,source_name,published_at",
+    }
+
+    results = client.collections[COLLECTION_NAME].documents.search(search_params)
+
+    hits = []
+    seen = set()
+    for hit in results.get("hits", []):
+        doc = hit["document"]
+        article_id = doc["article_id"]
+        if article_id in seen:
+            continue
+        seen.add(article_id)
+        article = NewsArticle.query.get(article_id)
+        if not article:
+            continue
+        hits.append({
+            "id": article.id,
+            "title": article.title,
+            "summary": article.summary[:200] if article.summary else None,
+            "url": article.url,
+            "source_name": article.source_name,
+            "companies": [],
+            "published_at": article.published_at.isoformat() if article.published_at else None,
+        })
+        if len(hits) >= n:
+            break
+
+    return jsonify(hits)
+
+
 @bp.route("/articles/search")
 def search_articles_route():
     query = request.args.get("q", "")
