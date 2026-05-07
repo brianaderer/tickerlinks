@@ -104,7 +104,7 @@ export default function Articles() {
               </div>
               <div className="flex gap-3 mt-2 text-xs text-stone-400 font-sans">
                 <span className="font-medium">{a.source_name}</span>
-                <span>{new Date(a.published_at || a.fetched_at || "").toLocaleString()}</span>
+                {(a.published_at || a.fetched_at) && <span>{new Date(a.published_at || a.fetched_at!).toLocaleString()}</span>}
               </div>
             </div>
           ))}

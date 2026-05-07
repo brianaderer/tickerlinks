@@ -9,20 +9,26 @@ export function useSSE() {
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const retryCount = useRef(0);
+  const ready = useRef(false);
 
   const connect = useCallback(() => {
     if (esRef.current && esRef.current.readyState !== EventSource.CLOSED) return;
 
-    const es = new EventSource(`${API_URL}/stream`);
+    // Connect with $, which means "only new events from now on" -- skip the Redis replay buffer
+    const es = new EventSource(`${API_URL}/stream?last_id=$`);
     esRef.current = es;
+    ready.current = false;
 
     es.onopen = () => {
       retryCount.current = 0;
       useAppStore.getState().setSSEConnected(true);
+      // Small delay to skip any burst of buffered events that arrive right after open
+      setTimeout(() => { ready.current = true; }, 500);
     };
 
     es.onerror = () => {
       useAppStore.getState().setSSEConnected(false);
+      ready.current = false;
       es.close();
       esRef.current = null;
       retryCount.current += 1;
@@ -32,26 +38,12 @@ export function useSSE() {
 
     // -- Data-carrying events: update cache directly, no refetch --
 
-    es.addEventListener("news:article_processed", (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data);
-        const article: NewsArticle = {
-          id: data.article_id,
-          title: data.title,
-          summary: data.summary || null,
-          url: data.url || "",
-          source_name: data.source_name || "",
-          companies: (data.companies || []).map((s: string) => ({ symbol: s, sentiment: "neutral", relevance: "primary" })),
-          published_at: data.published_at || null,
-          fetched_at: data.fetched_at || null,
-        };
-        queryClient.setQueryData<NewsArticle[]>(["articles", undefined, 50], (old) =>
-          old ? [article, ...old.filter((a) => a.id !== article.id)] : [article]
-        );
-      } catch { /* ignore malformed */ }
-    });
+    // news:article_processed is ignored -- the backend fires this for every article
+    // in the processing backlog (thousands), which would flood the UI.
+    // Headlines are hydrated once via fetch; only brand-new RSS arrivals update them.
 
     es.addEventListener("news:article_arrived", (e: MessageEvent) => {
+      if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
         if (data.articles && Array.isArray(data.articles)) {
@@ -59,13 +51,15 @@ export function useSSE() {
             if (!old) return old;
             const newArticles = data.articles as NewsArticle[];
             const ids = new Set(old.map((a) => a.id));
-            return [...newArticles.filter((a: NewsArticle) => !ids.has(a.id)), ...old];
+            const merged = [...newArticles.filter((a: NewsArticle) => !ids.has(a.id)), ...old];
+            return merged.slice(0, 50);
           });
         }
       } catch { /* ignore */ }
     });
 
     es.addEventListener("signals:analysis_complete", (e: MessageEvent) => {
+      if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
         if (data.predictions) {
@@ -78,6 +72,7 @@ export function useSSE() {
     });
 
     es.addEventListener("signals:ticker_digest", (e: MessageEvent) => {
+      if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
         queryClient.setQueryData<unknown[]>(["signalDigests"], (old) =>
@@ -87,6 +82,7 @@ export function useSSE() {
     });
 
     es.addEventListener("reports:generated", (e: MessageEvent) => {
+      if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
         if (data.report) {
@@ -99,6 +95,7 @@ export function useSSE() {
     });
 
     es.addEventListener("prices:update", (e: MessageEvent) => {
+      if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
         if (data.symbol && data.prices) {
@@ -109,7 +106,7 @@ export function useSSE() {
       } catch { /* ignore */ }
     });
 
-    // -- Chat streaming --
+    // -- Chat streaming (always active, even during replay) --
 
     es.addEventListener("chat:thinking", () => {
       useAppStore.getState().setChatStreaming(true);

@@ -95,9 +95,12 @@ def get_company_profile(symbol: str) -> str:
         latest = prices[0]
         oldest = prices[-1]
         change = (latest.close - oldest.open) / oldest.open * 100 if oldest.open else 0
+        vol_str = f"{latest.volume:,.0f}" if latest.volume is not None else "n/a"
+        open_str = f"${oldest.open:.2f}" if oldest.open is not None else "n/a"
+        close_str = f"${latest.close:.2f}" if latest.close is not None else "n/a"
         parts.append(
-            f"\nPrice action (7d): ${oldest.open:.2f} -> ${latest.close:.2f} ({change:+.2f}%)"
-            f"\n  Latest: ${latest.close:.2f} (vol: {latest.volume:,.0f})"
+            f"\nPrice action (7d): {open_str} -> {close_str} ({change:+.2f}%)"
+            f"\n  Latest: {close_str} (vol: {vol_str})"
         )
 
     return "\n".join(parts)
