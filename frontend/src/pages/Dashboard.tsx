@@ -28,18 +28,22 @@ export default function Dashboard() {
     const trendArticles = trends.slice(0, 6).map((t) => ({
       headline: t.headline,
       aids: [...(t.article_ids ?? [])],
+      count: 0,
     }));
-    // Round-robin: take one article from each trend per pass
+    const MAX_PER_TREND = 2;
+    // Round-robin: take one article from each trend per pass, max 2 per trend
     let added = true;
     while (added && ids.length < 20) {
       added = false;
       for (const t of trendArticles) {
+        if (t.count >= MAX_PER_TREND) continue;
         while (t.aids.length > 0) {
           const aid = t.aids.shift()!;
           if (!seen.has(aid)) {
             seen.add(aid);
             ids.push(aid);
             trendMap.set(aid, t.headline);
+            t.count++;
             added = true;
             break;
           }
