@@ -121,6 +121,7 @@ def _get_recent_signals(since: datetime) -> list[dict]:
             "direction": m.direction,
             "confidence": m.confidence,
             "detected_at": m.detected_at.isoformat(),
+            "source_at": (m.source_at or m.detected_at).isoformat(),
         }
         for m in matches
     ]
@@ -218,13 +219,13 @@ def _generate_summary(data: dict, now: datetime) -> str:
     for sym, sigs in sorted(by_company.items(), key=lambda x: -len(x[1]))[:8]:
         bullish = [s for s in sigs if s["direction"] == "bullish"]
         bearish = [s for s in sigs if s["direction"] == "bearish"]
-        latest_time = sigs[0]["detected_at"][:16]
+        latest_time = sigs[0]["source_at"][:16]
         signals_str += (
             f"  {sym}: {len(bullish)} bullish, {len(bearish)} bearish "
             f"(latest: {latest_time})\n"
         )
         for s in sigs[:3]:
-            signals_str += f"    - {s['signal']} ({s['direction']}, {s['confidence']:.0%}) at {s['detected_at'][:16]}\n"
+            signals_str += f"    - {s['signal']} ({s['direction']}, {s['confidence']:.0%}) source: {s['source_at'][:16]}\n"
 
     preds_str = ""
     for p in data.get("predictions", [])[:6]:

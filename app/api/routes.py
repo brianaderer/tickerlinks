@@ -234,7 +234,7 @@ def list_signal_matches():
     company_filter = request.args.get("company")
     signal_type = request.args.get("type")
 
-    query = SignalMatch.query.order_by(SignalMatch.detected_at.desc())
+    query = SignalMatch.query.order_by(SignalMatch.source_at.desc().nullslast(), SignalMatch.detected_at.desc())
     if company_filter:
         company = Company.query.filter_by(
             symbol=company_filter.upper()

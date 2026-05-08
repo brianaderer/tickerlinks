@@ -65,9 +65,10 @@ def get_company_profile(symbol: str) -> str:
     if matches:
         parts.append(f"\nRecent signals ({len(matches)}, last 7 days):")
         for m in matches:
+            source_time = m.source_at or m.detected_at
             parts.append(
                 f"  - {m.signal.name} ({m.direction}, {m.confidence:.0%}) "
-                f"at {m.detected_at.strftime('%Y-%m-%d %H:%M')}"
+                f"source: {source_time.strftime('%Y-%m-%d %H:%M')}"
             )
 
     pred = (
