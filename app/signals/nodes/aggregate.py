@@ -1,6 +1,8 @@
 import hashlib
 import logging
+import math
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from app.models import Signal
 from app.signals.state import EngineState
@@ -11,6 +13,8 @@ DEFAULT_WEIGHT = 0.5
 MIN_SIGNAL_TYPES = 2
 MAX_PREDICTIONS = 10
 RECENCY_TYPES = {"article_sentiment", "mention_velocity", "comention", "source_breadth"}
+
+FRESHNESS_HALF_LIFE_HOURS = 24
 
 
 def aggregate_node(state: EngineState) -> EngineState:
@@ -40,6 +44,9 @@ def aggregate_node(state: EngineState) -> EngineState:
             accuracy = weight_map.get((s["signal_name"], s["direction"]), DEFAULT_WEIGHT)
             contrib = s["confidence"]
             weight = abs(accuracy - 0.5) * 2.0
+
+            freshness = _freshness_multiplier(s.get("source_at", ""))
+            contrib *= freshness
 
             if accuracy < 0.5:
                 s["antisignal"] = True
@@ -102,6 +109,19 @@ def aggregate_node(state: EngineState) -> EngineState:
         len(predictions), min(len(predictions), MAX_PREDICTIONS), len(signals),
     )
     return state
+
+
+def _freshness_multiplier(source_at: str) -> float:
+    if not source_at:
+        return 1.0
+    try:
+        ts = datetime.fromisoformat(source_at)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        age_hours = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+        return math.exp(-0.693 * age_hours / FRESHNESS_HALF_LIFE_HOURS)
+    except (ValueError, TypeError):
+        return 1.0
 
 
 def _compute_signal_score(

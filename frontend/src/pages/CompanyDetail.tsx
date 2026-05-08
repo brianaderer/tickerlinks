@@ -108,7 +108,11 @@ export default function CompanyDetail() {
           <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Signal Matches</h3>
           <div className="h-px bg-stone-900 mb-4" />
           <div className="space-y-2">
-            {matches.map((m) => (
+            {[...matches].sort((a, b) => {
+              const ta = a.source_at ? new Date(a.source_at).getTime() : 0;
+              const tb = b.source_at ? new Date(b.source_at).getTime() : 0;
+              return tb - ta;
+            }).map((m) => (
               <div key={m.id} className="flex items-center gap-4 border-b border-stone-200 pb-3 text-sm">
                 <span className="font-serif font-bold text-stone-900 w-40">{m.signal}</span>
                 <SignalBadge direction={m.direction} confidence={m.confidence} />

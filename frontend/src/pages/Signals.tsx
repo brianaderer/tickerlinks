@@ -137,7 +137,7 @@ export default function Signals() {
                 <span className="text-stone-700 font-medium w-40">{m.signal}</span>
                 <span className="font-serif font-bold text-stone-900 w-16">{m.company}</span>
                 <SignalBadge direction={m.direction} confidence={m.confidence} />
-                <span className="text-stone-400 text-xs ml-auto">{new Date(m.detected_at).toLocaleString()}</span>
+                <span className="text-stone-400 text-xs ml-auto">{m.source_at ? new Date(m.source_at).toLocaleString() : new Date(m.detected_at).toLocaleString()}</span>
               </div>
             ))}
           </div>
