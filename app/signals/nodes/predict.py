@@ -56,10 +56,20 @@ def _format_signals(pred: dict, state: EngineState) -> str:
     lines = [f"Aggregate: {pred['direction']} ({pred['confidence']:.1%} confidence)"]
     lines.append(f"Bullish ({len(bullish)}):")
     for s in bullish:
-        lines.append(f"  - {s['signal_name']} (confidence: {s['confidence']:.2f}, type: {s['signal_type']})")
+        label = f"  - {s['signal_name']} (confidence: {s['confidence']:.2f}, type: {s['signal_type']})"
+        if s.get("antisignal"):
+            label += f" [ANTISIGNAL: this signal is operating below 50% historical accuracy and therefore constitutes a {s['antisignal_accuracy']}% antisignal — its contribution has been inverted]"
+        elif s.get("low_accuracy"):
+            label += " [low accuracy: 40-50% range, weight dampened]"
+        lines.append(label)
     lines.append(f"Bearish ({len(bearish)}):")
     for s in bearish:
-        lines.append(f"  - {s['signal_name']} (confidence: {s['confidence']:.2f}, type: {s['signal_type']})")
+        label = f"  - {s['signal_name']} (confidence: {s['confidence']:.2f}, type: {s['signal_type']})"
+        if s.get("antisignal"):
+            label += f" [ANTISIGNAL: this signal is operating below 50% historical accuracy and therefore constitutes a {s['antisignal_accuracy']}% antisignal — its contribution has been inverted]"
+        elif s.get("low_accuracy"):
+            label += " [low accuracy: 40-50% range, weight dampened]"
+        lines.append(label)
     return "\n".join(lines)
 
 

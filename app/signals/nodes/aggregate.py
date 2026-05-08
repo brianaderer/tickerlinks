@@ -11,6 +11,8 @@ DEFAULT_WEIGHT = 0.5
 MIN_SIGNAL_TYPES = 2
 MAX_PREDICTIONS = 10
 RECENCY_TYPES = {"article_sentiment", "mention_velocity", "comention", "source_breadth"}
+ANTISIGNAL_THRESHOLD = 0.40
+GRACE_FLOOR = 0.50
 
 
 def aggregate_node(state: EngineState) -> EngineState:
@@ -33,17 +35,34 @@ def aggregate_node(state: EngineState) -> EngineState:
         if len(signal_types) < MIN_SIGNAL_TYPES:
             continue
 
-        bullish = [s for s in company_signals if s["direction"] == "bullish"]
-        bearish = [s for s in company_signals if s["direction"] == "bearish"]
+        bullish_score = 0.0
+        bearish_score = 0.0
 
-        bullish_score = sum(
-            s["confidence"] * weight_map.get((s["signal_name"], s["direction"]), DEFAULT_WEIGHT)
-            for s in bullish
-        )
-        bearish_score = sum(
-            s["confidence"] * weight_map.get((s["signal_name"], s["direction"]), DEFAULT_WEIGHT)
-            for s in bearish
-        )
+        for s in company_signals:
+            accuracy = weight_map.get((s["signal_name"], s["direction"]), DEFAULT_WEIGHT)
+            contrib = s["confidence"]
+
+            if accuracy < ANTISIGNAL_THRESHOLD:
+                inverted_weight = 1.0 - accuracy
+                s["antisignal"] = True
+                s["antisignal_accuracy"] = round(inverted_weight * 100)
+                s["original_direction"] = s["direction"]
+                if s["direction"] == "bullish":
+                    bearish_score += contrib * inverted_weight
+                else:
+                    bullish_score += contrib * inverted_weight
+            elif accuracy < GRACE_FLOOR:
+                weight = accuracy * 0.5
+                s["low_accuracy"] = True
+                if s["direction"] == "bullish":
+                    bullish_score += contrib * weight
+                else:
+                    bearish_score += contrib * weight
+            else:
+                if s["direction"] == "bullish":
+                    bullish_score += contrib * accuracy
+                else:
+                    bearish_score += contrib * accuracy
         total_score = bullish_score + bearish_score
         if total_score == 0:
             continue
@@ -64,6 +83,9 @@ def aggregate_node(state: EngineState) -> EngineState:
         )
         fingerprint = _signal_fingerprint(company_signals)
 
+        n_bullish = sum(1 for s in company_signals if s["direction"] == "bullish")
+        n_bearish = sum(1 for s in company_signals if s["direction"] == "bearish")
+
         predictions.append({
             "company_id": company_id,
             "symbol": symbol,
@@ -71,8 +93,8 @@ def aggregate_node(state: EngineState) -> EngineState:
             "confidence": confidence,
             "signal_score": signal_score,
             "fingerprint": fingerprint,
-            "bullish_signals": len(bullish),
-            "bearish_signals": len(bearish),
+            "bullish_signals": n_bullish,
+            "bearish_signals": n_bearish,
             "signal_names": [s["signal_name"] for s in company_signals],
             "weights_used": {
                 f"{s['signal_name']}|{s['direction']}": round(
