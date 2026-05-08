@@ -48,6 +48,8 @@ class ComentionDetector(SignalDetector):
                 continue
 
             confidence = min(0.8, 0.4 + abs(spread) * 0.3)
+            source_at = data.get("latest_published_at")
+            source_at_str = source_at.isoformat() if source_at else ""
 
             favored = sym_a if spread > 0 else sym_b
             disfavored = sym_b if spread > 0 else sym_a
@@ -63,6 +65,7 @@ class ComentionDetector(SignalDetector):
                     symbol=favored,
                     direction="bullish",
                     confidence=confidence,
+                    source_at=source_at_str,
                     context={
                         "pair": pair_key,
                         "peer": disfavored,
@@ -79,6 +82,7 @@ class ComentionDetector(SignalDetector):
                     symbol=disfavored,
                     direction="bearish",
                     confidence=confidence,
+                    source_at=source_at_str,
                     context={
                         "pair": pair_key,
                         "peer": favored,

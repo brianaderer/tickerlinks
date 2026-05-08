@@ -10,6 +10,11 @@ from app.sse import sse_publish
 
 logger = logging.getLogger(__name__)
 
+ARTICLE_DEBOUNCE_HOURS = 24
+TICKER_DEBOUNCE_HOURS = 6
+ARTICLE_SIGNAL_TYPES = {"article", "sentiment"}
+TICKER_SIGNAL_TYPES = {"volume", "technical", "fundamentals", "pattern"}
+
 
 def output_node(state: EngineState) -> EngineState:
     raw_signals = state.get("signals", [])
@@ -72,6 +77,15 @@ def _persist_signals(raw_signals: list[dict], run_id: str):
                 db.session.flush()
             signal_cache[cache_key] = signal_obj
 
+        source_at = _resolve_source_at(
+            signal_cache[cache_key].id,
+            sig_data["company_id"],
+            sig_data["direction"],
+            sig_data.get("source_at", ""),
+            sig_data.get("signal_type", ""),
+            now,
+        )
+
         match = SignalMatch(
             signal_id=signal_cache[cache_key].id,
             company_id=sig_data["company_id"],
@@ -79,6 +93,7 @@ def _persist_signals(raw_signals: list[dict], run_id: str):
             direction=sig_data["direction"],
             context={k: float(v) if hasattr(v, 'item') else v for k, v in (sig_data.get("context") or {}).items()},
             run_id=run_id,
+            source_at=source_at,
             detected_at=now,
         )
         db.session.add(match)
@@ -91,6 +106,44 @@ def _persist_signals(raw_signals: list[dict], run_id: str):
         })
 
     db.session.commit()
+
+
+def _resolve_source_at(
+    signal_id: int,
+    company_id: int,
+    direction: str,
+    raw_source_at: str,
+    signal_type: str,
+    now: datetime,
+) -> datetime | None:
+    new_ts = None
+    if raw_source_at:
+        try:
+            new_ts = datetime.fromisoformat(raw_source_at)
+            if new_ts.tzinfo is None:
+                new_ts = new_ts.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            new_ts = None
+
+    if signal_type in ARTICLE_SIGNAL_TYPES:
+        debounce = timedelta(hours=ARTICLE_DEBOUNCE_HOURS)
+    elif signal_type in TICKER_SIGNAL_TYPES:
+        debounce = timedelta(hours=TICKER_DEBOUNCE_HOURS)
+    else:
+        debounce = timedelta(hours=TICKER_DEBOUNCE_HOURS)
+
+    prev = (
+        SignalMatch.query
+        .filter_by(signal_id=signal_id, company_id=company_id, direction=direction)
+        .filter(SignalMatch.source_at.isnot(None))
+        .order_by(SignalMatch.detected_at.desc())
+        .first()
+    )
+
+    if prev and prev.source_at and (now - prev.detected_at) <= debounce:
+        return prev.source_at
+
+    return new_ts or now
 
 
 def _persist_predictions(predictions: list[dict], run_id: str):

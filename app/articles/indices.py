@@ -71,16 +71,19 @@ def _parse_timestamp(ts_str: str) -> datetime | None:
 
 def sentiment_score(symbol: str = None, before: datetime = None, after: datetime = None) -> dict:
     metas = _load_chunk0_metadatas(before=before, after=after)
-    stats = defaultdict(lambda: {"bullish": 0, "bearish": 0, "neutral": 0, "total": 0})
+    stats = defaultdict(lambda: {"bullish": 0, "bearish": 0, "neutral": 0, "total": 0, "latest_published_at": None})
 
     for m in metas:
         sentiments = _parse_sentiments(m.get("company_sentiments", ""))
+        pub = _parse_timestamp(m.get("published_at", ""))
         for sym, sent in sentiments.items():
             if symbol and sym != symbol.upper():
                 continue
             stats[sym]["total"] += 1
             if sent in ("bullish", "bearish", "neutral"):
                 stats[sym][sent] += 1
+            if pub and (stats[sym]["latest_published_at"] is None or pub > stats[sym]["latest_published_at"]):
+                stats[sym]["latest_published_at"] = pub
 
     result = {}
     for sym, s in stats.items():
@@ -91,6 +94,7 @@ def sentiment_score(symbol: str = None, before: datetime = None, after: datetime
             "bearish": s["bearish"],
             "neutral": s["neutral"],
             "total_mentions": total,
+            "latest_published_at": s["latest_published_at"],
         }
     return result
 
@@ -102,6 +106,7 @@ def mention_velocity(symbol: str = None, before: datetime = None, after: datetim
     windows = {"1h": 3600, "6h": 21600, "24h": 86400, "7d": 604800}
     counts = defaultdict(lambda: {w: 0 for w in windows})
     prev_counts = defaultdict(lambda: {w: 0 for w in windows})
+    latest_ts = defaultdict(lambda: None)
 
     for m in metas:
         companies = _parse_companies(m.get("companies", ""))
@@ -118,6 +123,8 @@ def mention_velocity(symbol: str = None, before: datetime = None, after: datetim
         for sym in companies:
             if symbol and sym != symbol.upper():
                 continue
+            if latest_ts[sym] is None or ts > latest_ts[sym]:
+                latest_ts[sym] = ts
             for window_name, window_secs in windows.items():
                 if age_seconds <= window_secs:
                     counts[sym][window_name] += 1
@@ -136,16 +143,18 @@ def mention_velocity(symbol: str = None, before: datetime = None, after: datetim
                 "previous": previous,
                 "rate_of_change": round(rate_of_change, 3),
             }
+        velocity["latest_published_at"] = latest_ts.get(sym)
         result[sym] = velocity
     return result
 
 
 def comention_pairs(symbol: str = None, before: datetime = None, after: datetime = None) -> dict:
     metas = _load_chunk0_metadatas(before=before, after=after)
-    pairs = defaultdict(lambda: {"count": 0, "same_sentiment": 0, "divergent_sentiment": 0})
+    pairs = defaultdict(lambda: {"count": 0, "same_sentiment": 0, "divergent_sentiment": 0, "latest_published_at": None})
 
     for m in metas:
         sentiments = _parse_sentiments(m.get("company_sentiments", ""))
+        pub = _parse_timestamp(m.get("published_at", ""))
         syms = list(sentiments.keys())
         if len(syms) < 2:
             continue
@@ -158,6 +167,8 @@ def comention_pairs(symbol: str = None, before: datetime = None, after: datetime
 
                 pair_key = f"{a}/{b}"
                 pairs[pair_key]["count"] += 1
+                if pub and (pairs[pair_key]["latest_published_at"] is None or pub > pairs[pair_key]["latest_published_at"]):
+                    pairs[pair_key]["latest_published_at"] = pub
 
                 sent_a = sentiments[syms[i]]
                 sent_b = sentiments[syms[j]]
@@ -174,6 +185,7 @@ def comention_pairs(symbol: str = None, before: datetime = None, after: datetime
             "same_sentiment": data["same_sentiment"],
             "divergent_sentiment": data["divergent_sentiment"],
             "divergence_ratio": round(data["divergent_sentiment"] / max(total, 1), 3),
+            "latest_published_at": data["latest_published_at"],
         }
     return result
 
@@ -181,10 +193,12 @@ def comention_pairs(symbol: str = None, before: datetime = None, after: datetime
 def source_breadth(symbol: str = None, before: datetime = None, after: datetime = None) -> dict:
     metas = _load_chunk0_metadatas(before=before, after=after)
     company_sources = defaultdict(set)
+    latest_ts = defaultdict(lambda: None)
 
     for m in metas:
         companies = _parse_companies(m.get("companies", ""))
         source = m.get("source_name", "")
+        pub = _parse_timestamp(m.get("published_at", ""))
         if not source:
             continue
 
@@ -192,12 +206,15 @@ def source_breadth(symbol: str = None, before: datetime = None, after: datetime 
             if symbol and sym != symbol.upper():
                 continue
             company_sources[sym].add(source)
+            if pub and (latest_ts[sym] is None or pub > latest_ts[sym]):
+                latest_ts[sym] = pub
 
     result = {}
     for sym, sources in company_sources.items():
         result[sym] = {
             "unique_sources": len(sources),
             "sources": sorted(sources),
+            "latest_published_at": latest_ts.get(sym),
         }
     return result
 

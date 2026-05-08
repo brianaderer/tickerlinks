@@ -45,6 +45,7 @@ class ArticleSentimentDetector(SignalDetector):
             direction = "bullish" if score > 0 else "bearish"
             confidence = min(0.9, 0.4 + abs(score) * 0.5)
 
+            source_at = data.get("latest_published_at")
             signals.append(SignalData(
                 signal_name=f"Article Sentiment {direction.title()}",
                 signal_type="article",
@@ -52,6 +53,7 @@ class ArticleSentimentDetector(SignalDetector):
                 symbol=sym,
                 direction=direction,
                 confidence=confidence,
+                source_at=source_at.isoformat() if source_at else "",
                 context={
                     "sentiment_score": score,
                     "bullish": data["bullish"],

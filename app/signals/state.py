@@ -10,6 +10,7 @@ class SignalData(TypedDict, total=False):
     direction: str
     confidence: float
     context: dict
+    source_at: str
 
 
 class EngineState(TypedDict, total=False):

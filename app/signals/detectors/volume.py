@@ -29,6 +29,12 @@ class VolumeDetector(SignalDetector):
 
         return signals
 
+    def _candle_ts(self, df: pd.DataFrame, idx: int = -1) -> str:
+        ts = df.index[idx]
+        if hasattr(ts, "isoformat"):
+            return ts.isoformat()
+        return str(ts)
+
     def _check_volume_spike(self, df: pd.DataFrame, company_id: int, symbol: str) -> list[SignalData]:
         avg_volume = df["volume"].iloc[-self.lookback - 1:-1].mean()
         if avg_volume == 0:
@@ -48,6 +54,7 @@ class VolumeDetector(SignalDetector):
                 symbol=symbol,
                 direction=direction,
                 confidence=min(0.85, 0.5 + (ratio - self.spike_threshold) * 0.1),
+                source_at=self._candle_ts(df),
                 context={
                     "volume_ratio": round(ratio, 2),
                     "avg_volume": int(avg_volume),
@@ -73,6 +80,7 @@ class VolumeDetector(SignalDetector):
                 symbol=symbol,
                 direction="bearish",
                 confidence=0.55,
+                source_at=self._candle_ts(recent),
                 context={"price_trend": "up", "volume_trend": "down"},
             )]
         elif price_trend < 0 and volume_trend > 0:
@@ -83,6 +91,7 @@ class VolumeDetector(SignalDetector):
                 symbol=symbol,
                 direction="bullish",
                 confidence=0.55,
+                source_at=self._candle_ts(recent),
                 context={"price_trend": "down", "volume_trend": "up"},
             )]
         return []

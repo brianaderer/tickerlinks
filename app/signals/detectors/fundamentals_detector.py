@@ -23,14 +23,20 @@ class FundamentalsDetector(SignalDetector):
             fundamentals = fund_info.get("latest")
             insider_trades = fund_info.get("insider_trades", [])
 
+            price_info = state.get("price_data", {}).get(company_id)
+            latest_candle_ts = ""
+            if price_info and price_info.get("df") is not None and not price_info["df"].empty:
+                ts = price_info["df"].index[-1]
+                latest_candle_ts = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+
             if fundamentals:
-                signals.extend(self._check_52week(company_id, symbol, fundamentals))
+                signals.extend(self._check_52week(company_id, symbol, fundamentals, latest_candle_ts))
             if insider_trades:
                 signals.extend(self._check_insider_cluster(company_id, symbol, insider_trades))
 
         return signals
 
-    def _check_52week(self, company_id: int, symbol: str, f: dict) -> list[SignalData]:
+    def _check_52week(self, company_id: int, symbol: str, f: dict, candle_ts: str = "") -> list[SignalData]:
         signals = []
         price = f.get("current_price")
         high = f.get("fifty_two_week_high")
@@ -50,6 +56,7 @@ class FundamentalsDetector(SignalDetector):
                 symbol=symbol,
                 direction="bullish",
                 confidence=0.6,
+                source_at=candle_ts,
                 context={
                     "price": price,
                     "52w_high": high,
@@ -64,6 +71,7 @@ class FundamentalsDetector(SignalDetector):
                 symbol=symbol,
                 direction="bearish",
                 confidence=0.6,
+                source_at=candle_ts,
                 context={
                     "price": price,
                     "52w_low": low,
@@ -95,6 +103,8 @@ class FundamentalsDetector(SignalDetector):
         signals = []
         if len(recent_buys) >= self.insider_cluster_min_count:
             total_shares = sum(t.get("shares", 0) for t in recent_buys)
+            latest_date = max(t["date"] for t in recent_buys if t.get("date"))
+            source_at_str = datetime.combine(latest_date, datetime.min.time()).replace(tzinfo=timezone.utc).isoformat() if latest_date else ""
             signals.append(SignalData(
                 signal_name="Insider Cluster Buy",
                 signal_type="fundamentals",
@@ -102,6 +112,7 @@ class FundamentalsDetector(SignalDetector):
                 symbol=symbol,
                 direction="bullish",
                 confidence=min(0.85, 0.6 + len(recent_buys) * 0.05),
+                source_at=source_at_str,
                 context={
                     "buy_count": len(recent_buys),
                     "total_shares": total_shares,
@@ -112,6 +123,8 @@ class FundamentalsDetector(SignalDetector):
 
         if len(recent_sells) >= self.insider_cluster_min_count:
             total_shares = sum(t.get("shares", 0) for t in recent_sells)
+            latest_date = max(t["date"] for t in recent_sells if t.get("date"))
+            source_at_str = datetime.combine(latest_date, datetime.min.time()).replace(tzinfo=timezone.utc).isoformat() if latest_date else ""
             signals.append(SignalData(
                 signal_name="Insider Cluster Sell",
                 signal_type="fundamentals",
@@ -119,6 +132,7 @@ class FundamentalsDetector(SignalDetector):
                 symbol=symbol,
                 direction="bearish",
                 confidence=min(0.85, 0.6 + len(recent_sells) * 0.05),
+                source_at=source_at_str,
                 context={
                     "sell_count": len(recent_sells),
                     "total_shares": total_shares,

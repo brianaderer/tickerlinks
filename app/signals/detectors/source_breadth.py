@@ -40,6 +40,7 @@ class SourceBreadthDetector(SignalDetector):
 
             confidence = min(0.8, 0.35 + count * 0.1)
 
+            source_at = data.get("latest_published_at")
             signals.append(SignalData(
                 signal_name="Multi-Source Coverage",
                 signal_type="article",
@@ -47,6 +48,7 @@ class SourceBreadthDetector(SignalDetector):
                 symbol=sym,
                 direction="bullish",
                 confidence=confidence,
+                source_at=source_at.isoformat() if source_at else "",
                 context={
                     "unique_sources": count,
                     "sources": data["sources"],

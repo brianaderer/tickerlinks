@@ -62,9 +62,14 @@ class SentimentDetector(SignalDetector):
         return signals
 
     def _analyze_sentiment(self, company_id: int, symbol: str, articles: list[dict]) -> SignalData | None:
+        batch = articles[:15]
         article_text = "\n".join(
             f"- [{a['published_at']}] {a['title']}: {a.get('summary', '')[:200]}"
-            for a in articles[:15]
+            for a in batch
+        )
+        latest_pub = max(
+            (a["published_at"] for a in batch if a.get("published_at")),
+            default=None,
         )
 
         prompt = SENTIMENT_PROMPT.format(symbol=symbol, articles=article_text)
@@ -85,6 +90,13 @@ class SentimentDetector(SignalDetector):
         if direction == "neutral" or abs(score) < self.sentiment_threshold:
             return None
 
+        source_at_str = ""
+        if latest_pub:
+            if isinstance(latest_pub, str):
+                source_at_str = latest_pub
+            else:
+                source_at_str = latest_pub.isoformat()
+
         return SignalData(
             signal_name=f"News Sentiment {direction.title()}",
             signal_type="sentiment",
@@ -92,6 +104,7 @@ class SentimentDetector(SignalDetector):
             symbol=symbol,
             direction=direction,
             confidence=confidence,
+            source_at=source_at_str,
             context={
                 "sentiment_score": score,
                 "reasoning": result.get("reasoning", ""),

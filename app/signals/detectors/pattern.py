@@ -115,6 +115,11 @@ class PatternDetector(SignalDetector):
         if result.get("direction", "neutral") == "neutral":
             return None
 
+        source_at_str = ""
+        if price_info and price_info.get("df") is not None and not price_info["df"].empty:
+            ts = price_info["df"].index[-1]
+            source_at_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+
         return SignalData(
             signal_name=f"Pattern: {result['pattern_name']}",
             signal_type="pattern",
@@ -122,6 +127,7 @@ class PatternDetector(SignalDetector):
             symbol=symbol,
             direction=result["direction"],
             confidence=float(result.get("confidence", 0.5)),
+            source_at=source_at_str,
             context={
                 "pattern": result["pattern_name"],
                 "reasoning": result.get("reasoning", ""),

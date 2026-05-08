@@ -255,6 +255,7 @@ def list_signal_matches():
                 "confidence": m.confidence,
                 "context": m.context,
                 "detected_at": m.detected_at.isoformat(),
+                "source_at": m.source_at.isoformat() if m.source_at else None,
             }
             for m in matches
         ]

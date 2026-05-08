@@ -80,6 +80,7 @@ export interface SignalMatch {
   confidence: number;
   context: Record<string, unknown>;
   detected_at: string;
+  source_at: string | null;
 }
 
 export interface SignalWeight {

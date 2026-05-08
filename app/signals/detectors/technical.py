@@ -19,6 +19,12 @@ class TechnicalDetector(SignalDetector):
         self.bb_period = 20
         self.bb_std = 2.0
 
+    def _candle_ts(self, df: pd.DataFrame, idx: int = -1) -> str:
+        ts = df.index[idx]
+        if hasattr(ts, "isoformat"):
+            return ts.isoformat()
+        return str(ts)
+
     def detect(self, state: EngineState) -> list[SignalData]:
         signals = []
         for company_id, price_rows in state.get("price_data", {}).items():
@@ -49,6 +55,7 @@ class TechnicalDetector(SignalDetector):
                 symbol=symbol,
                 direction="bullish",
                 confidence=min(0.9, (self.rsi_oversold - latest) / self.rsi_oversold + 0.5),
+                source_at=self._candle_ts(df),
                 context={"rsi": round(latest, 2), "threshold": self.rsi_oversold},
             ))
         elif latest >= self.rsi_overbought:
@@ -59,6 +66,7 @@ class TechnicalDetector(SignalDetector):
                 symbol=symbol,
                 direction="bearish",
                 confidence=min(0.9, (latest - self.rsi_overbought) / (100 - self.rsi_overbought) + 0.5),
+                source_at=self._candle_ts(df),
                 context={"rsi": round(latest, 2), "threshold": self.rsi_overbought},
             ))
 
@@ -87,6 +95,7 @@ class TechnicalDetector(SignalDetector):
                 symbol=symbol,
                 direction="bullish",
                 confidence=0.65,
+                source_at=self._candle_ts(df),
                 context={"macd": round(macd_line.iloc[-1], 4), "signal": round(signal_line.iloc[-1], 4)},
             ))
         elif prev_diff > 0 and curr_diff < 0:
@@ -97,6 +106,7 @@ class TechnicalDetector(SignalDetector):
                 symbol=symbol,
                 direction="bearish",
                 confidence=0.65,
+                source_at=self._candle_ts(df),
                 context={"macd": round(macd_line.iloc[-1], 4), "signal": round(signal_line.iloc[-1], 4)},
             ))
 
@@ -120,6 +130,7 @@ class TechnicalDetector(SignalDetector):
                 symbol=symbol,
                 direction="bullish",
                 confidence=0.6,
+                source_at=self._candle_ts(df),
                 context={"close": round(latest_close, 2), "lower_band": round(lower, 2)},
             ))
         elif latest_close >= upper:
@@ -130,6 +141,7 @@ class TechnicalDetector(SignalDetector):
                 symbol=symbol,
                 direction="bearish",
                 confidence=0.6,
+                source_at=self._candle_ts(df),
                 context={"close": round(latest_close, 2), "upper_band": round(upper, 2)},
             ))
 

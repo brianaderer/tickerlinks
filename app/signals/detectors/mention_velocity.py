@@ -45,6 +45,7 @@ class MentionVelocityDetector(SignalDetector):
 
                 confidence = min(0.85, 0.45 + roc * 0.15)
 
+                source_at = windows.get("latest_published_at")
                 signals.append(SignalData(
                     signal_name=f"Mention Spike ({window_name})",
                     signal_type="article",
@@ -52,6 +53,7 @@ class MentionVelocityDetector(SignalDetector):
                     symbol=sym,
                     direction="bullish",
                     confidence=confidence,
+                    source_at=source_at.isoformat() if source_at else "",
                     context={
                         "window": window_name,
                         "count": count,

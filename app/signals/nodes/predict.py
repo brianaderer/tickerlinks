@@ -41,7 +41,32 @@ MAGNITUDE represents how much attention this prediction deserves:
 
 Consider signal PURITY when setting magnitude: if bullish and bearish signals are roughly equal, that may indicate volatility rather than a clear direction. Decide whether conflicting signals represent genuine uncertainty (low magnitude) or a volatile situation worth watching (higher magnitude).
 
+Each signal includes a "source" timestamp indicating when the underlying condition arose (not when it was detected):
+- Source < 6h ago = fresh catalyst, give it more weight
+- Source 6h-48h ago = developing situation, normal weight
+- Source > 48h ago = may already be priced in, reduce weight
+Use this to distinguish fresh catalysts from stale conditions.
+
 Do NOT wrap your response in markdown code fences. Return raw JSON only."""
+
+
+def _format_age(source_at_str: str) -> str:
+    if not source_at_str:
+        return "unknown"
+    try:
+        ts = datetime.fromisoformat(source_at_str)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        delta = datetime.now(timezone.utc) - ts
+        total_hours = delta.total_seconds() / 3600
+        if total_hours < 1:
+            return f"{int(delta.total_seconds() / 60)}m ago"
+        elif total_hours < 48:
+            return f"{total_hours:.0f}h ago"
+        else:
+            return f"{delta.days}d {int(total_hours % 24)}h ago"
+    except (ValueError, TypeError):
+        return "unknown"
 
 
 def _format_signals(pred: dict, state: EngineState) -> str:
@@ -56,13 +81,15 @@ def _format_signals(pred: dict, state: EngineState) -> str:
     lines = [f"Aggregate: {pred['direction']} ({pred['confidence']:.1%} confidence)"]
     lines.append(f"Bullish ({len(bullish)}):")
     for s in bullish:
-        label = f"  - {s['signal_name']} (confidence: {s['confidence']:.2f}, type: {s['signal_type']})"
+        age = _format_age(s.get("source_at", ""))
+        label = f"  - {s['signal_name']} (confidence: {s['confidence']:.2f}, type: {s['signal_type']}, source: {age})"
         if s.get("antisignal"):
             label += f" [ANTISIGNAL: this signal is operating below 50% historical accuracy and therefore constitutes a {s['antisignal_accuracy']}% antisignal — its contribution has been inverted]"
         lines.append(label)
     lines.append(f"Bearish ({len(bearish)}):")
     for s in bearish:
-        label = f"  - {s['signal_name']} (confidence: {s['confidence']:.2f}, type: {s['signal_type']})"
+        age = _format_age(s.get("source_at", ""))
+        label = f"  - {s['signal_name']} (confidence: {s['confidence']:.2f}, type: {s['signal_type']}, source: {age})"
         if s.get("antisignal"):
             label += f" [ANTISIGNAL: this signal is operating below 50% historical accuracy and therefore constitutes a {s['antisignal_accuracy']}% antisignal — its contribution has been inverted]"
         lines.append(label)

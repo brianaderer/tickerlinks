@@ -36,6 +36,7 @@ class SignalMatch(db.Model):
     direction = db.Column(db.String(10), nullable=False)
     context = db.Column(db.JSON, default=dict)
     run_id = db.Column(db.String(32), index=True)
+    source_at = db.Column(db.DateTime(timezone=True), nullable=True)
     detected_at = db.Column(
         db.DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
