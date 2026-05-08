@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import LinkedMarkdown from "./LinkedMarkdown";
 import type { Prediction } from "../types";
 import SignalBadge from "./SignalBadge";
@@ -22,7 +23,7 @@ export default function PredictionCard({ prediction: p }: Props) {
   return (
     <div className="border-b border-stone-200 pb-4">
       <div className="flex items-center justify-between mb-1">
-        <span className="font-serif font-bold text-stone-900">{p.company}</span>
+        <Link to="/companies/$symbol" params={{ symbol: p.company }} className="font-serif font-bold text-stone-900 hover:underline">{p.company}</Link>
         <div className="flex items-center gap-2">
           {p.magnitude != null && (
             <span className={`text-[10px] font-sans font-semibold px-1.5 py-0.5 rounded ${magnitudeColor(p.magnitude)}`}>

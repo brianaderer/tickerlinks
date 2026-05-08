@@ -189,7 +189,7 @@ export default function Dashboard() {
 
       {/* Predictions */}
       {predictions && predictions.length > 0 && (
-        <section className="py-6 border-t border-stone-300">
+        <section className="py-6">
           <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Predictions</h3>
           <div className="h-px bg-stone-900 mb-4" />
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
