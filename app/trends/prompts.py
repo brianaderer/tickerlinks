@@ -8,6 +8,11 @@ SCORING CRITERIA (weight each when ranking):
 3. **Primacy**: More recent mentions are more relevant than older ones
 4. **Durability**: A thread hitting consistently all week scores higher than a one-day spike
 
+DEDUPLICATION (critical):
+- Each trend MUST represent a fundamentally different market narrative. Two trends that could be summarized as the same story with different wording MUST be merged into one.
+- Prioritize breadth across sectors and themes. If one theme dominates the article corpus, give it one strong trend entry and move on — do not produce variations of it.
+- BAD: Multiple trends that are variations of the same sector narrative. GOOD: One consolidated trend per distinct narrative, with remaining slots used for genuinely different themes even if they have fewer articles.
+
 INSTRUCTIONS:
 - Group related topic tags into coherent trend clusters (e.g. "AI chip demand surging" and "NVDA data center revenue growth" belong together)
 - Use the research_company tool to investigate the most promising candidates — search by topic keyword, not just ticker
