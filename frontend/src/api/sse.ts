@@ -69,7 +69,7 @@ export function useSSE() {
         if (data.mode === "manual" && data.symbol) {
           useAppStore.getState().removePendingPrediction(data.symbol);
           if (data.prediction) {
-            queryClient.setQueryData(["predictions", data.symbol], (old: unknown[] | undefined) => {
+            queryClient.setQueryData(["predictions", data.symbol, undefined], (old: unknown[] | undefined) => {
               const existing = (old || []) as any[];
               return [data.prediction, ...existing.filter((p: any) => p.id !== data.prediction.id)];
             });
