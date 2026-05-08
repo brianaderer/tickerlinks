@@ -11,8 +11,6 @@ DEFAULT_WEIGHT = 0.5
 MIN_SIGNAL_TYPES = 2
 MAX_PREDICTIONS = 10
 RECENCY_TYPES = {"article_sentiment", "mention_velocity", "comention", "source_breadth"}
-ANTISIGNAL_THRESHOLD = 0.40
-GRACE_FLOOR = 0.50
 
 
 def aggregate_node(state: EngineState) -> EngineState:
@@ -41,28 +39,21 @@ def aggregate_node(state: EngineState) -> EngineState:
         for s in company_signals:
             accuracy = weight_map.get((s["signal_name"], s["direction"]), DEFAULT_WEIGHT)
             contrib = s["confidence"]
+            weight = abs(accuracy - 0.5) * 2.0
 
-            if accuracy < ANTISIGNAL_THRESHOLD:
-                inverted_weight = 1.0 - accuracy
+            if accuracy < 0.5:
                 s["antisignal"] = True
-                s["antisignal_accuracy"] = round(inverted_weight * 100)
+                s["antisignal_accuracy"] = round(weight * 100)
                 s["original_direction"] = s["direction"]
                 if s["direction"] == "bullish":
-                    bearish_score += contrib * inverted_weight
+                    bearish_score += contrib * weight
                 else:
-                    bullish_score += contrib * inverted_weight
-            elif accuracy < GRACE_FLOOR:
-                weight = accuracy * 0.5
-                s["low_accuracy"] = True
+                    bullish_score += contrib * weight
+            else:
                 if s["direction"] == "bullish":
                     bullish_score += contrib * weight
                 else:
                     bearish_score += contrib * weight
-            else:
-                if s["direction"] == "bullish":
-                    bullish_score += contrib * accuracy
-                else:
-                    bearish_score += contrib * accuracy
         total_score = bullish_score + bearish_score
         if total_score == 0:
             continue
