@@ -232,8 +232,8 @@ def _embed_and_store(article: NewsArticle, chunks: list[str], tags: dict):
             "article_summary": tags.get("article_summary", ""),
             "topic_threads": " || ".join(tags.get("topic_threads", [])),
             "source_name": article.source_name or "",
-            "published_at_ts": int(article.published_at.timestamp()) if article.published_at else 0,
-            "published_at": article.published_at.isoformat() if article.published_at else "",
+            "published_at_ts": int((article.published_at or article.fetched_at).timestamp()) if (article.published_at or article.fetched_at) else 0,
+            "published_at": (article.published_at or article.fetched_at).isoformat() if (article.published_at or article.fetched_at) else "",
             "embedding": embeddings[i],
         }
         client.collections[COLLECTION_NAME].documents.upsert(doc)
