@@ -112,7 +112,6 @@ export default function CompanyDetail() {
               <div key={m.id} className="flex items-center gap-4 border-b border-stone-200 pb-3 text-sm">
                 <span className="font-serif font-bold text-stone-900 w-40">{m.signal}</span>
                 <SignalBadge direction={m.direction} confidence={m.confidence} />
-                <span className="text-stone-400 text-xs font-sans ml-auto">{new Date(m.detected_at).toLocaleString()}</span>
               </div>
             ))}
           </div>
