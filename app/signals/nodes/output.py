@@ -16,8 +16,7 @@ def output_node(state: EngineState) -> EngineState:
     predictions = state.get("strong_predictions", []) + state.get("weak_predictions", [])
     run_id = uuid4().hex
 
-    has_predictions = len(predictions) > 0
-    _persist_signals(raw_signals, run_id, has_predictions=has_predictions)
+    _persist_signals(raw_signals, run_id)
     _persist_predictions(predictions, run_id)
 
     logger.info(
@@ -27,29 +26,26 @@ def output_node(state: EngineState) -> EngineState:
     return state
 
 
-def _persist_signals(raw_signals: list[dict], run_id: str, has_predictions: bool = True):
+def _persist_signals(raw_signals: list[dict], run_id: str):
     now = datetime.now(timezone.utc)
 
-    # Delete old signal matches for companies in this run
+    # Delete old signal matches NOT linked to any prediction
     company_ids = list({s["company_id"] for s in raw_signals})
     if company_ids:
-        old_query = SignalMatch.query.filter(SignalMatch.company_id.in_(company_ids))
-        if not has_predictions:
-            # Signals-only run: only delete matches NOT linked to predictions
-            linked_ids = {
-                row[0] for row in
-                db.session.execute(prediction_match.select()).fetchall()
-            }
-            old_match_ids = [m.id for m in old_query.all() if m.id not in linked_ids]
-        else:
-            old_match_ids = [m.id for m in old_query.all()]
+        linked_ids = {
+            row[0] for row in
+            db.session.execute(
+                prediction_match.select().with_only_columns(
+                    prediction_match.c.signal_match_id
+                )
+            ).fetchall()
+        }
+        old_matches = SignalMatch.query.filter(
+            SignalMatch.company_id.in_(company_ids)
+        ).all()
+        old_match_ids = [m.id for m in old_matches if m.id not in linked_ids]
 
         if old_match_ids:
-            db.session.execute(
-                prediction_match.delete().where(
-                    prediction_match.c.signal_match_id.in_(old_match_ids)
-                )
-            )
             SignalMatch.query.filter(SignalMatch.id.in_(old_match_ids)).delete(
                 synchronize_session=False
             )
