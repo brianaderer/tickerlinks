@@ -2,7 +2,6 @@ import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { API_URL } from "./client";
 import { useAppStore } from "../store";
-import type { NewsArticle } from "../types";
 
 export function useSSE() {
   const queryClient = useQueryClient();
@@ -48,18 +47,7 @@ export function useSSE() {
     es.addEventListener("news:article_arrived", (e: MessageEvent) => {
       trackId(e);
       if (!ready.current) return;
-      try {
-        const data = JSON.parse(e.data);
-        if (data.articles && Array.isArray(data.articles)) {
-          queryClient.setQueryData<NewsArticle[]>(["articles", undefined, 50], (old) => {
-            if (!old) return old;
-            const newArticles = data.articles as NewsArticle[];
-            const ids = new Set(old.map((a) => a.id));
-            const merged = [...newArticles.filter((a: NewsArticle) => !ids.has(a.id)), ...old];
-            return merged.slice(0, 50);
-          });
-        }
-      } catch { /* ignore */ }
+      queryClient.invalidateQueries({ queryKey: ["articles"] });
     });
 
     es.addEventListener("signals:analysis_started", (e: MessageEvent) => {
