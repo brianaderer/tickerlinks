@@ -19,19 +19,32 @@ export default function Dashboard() {
   const { data: trendSnapshot } = useTrends();
   const trends = trendSnapshot?.trends;
 
-  // Collect all article IDs from top trends (deduped) + map article->trend headline
+  // Collect article IDs round-robin from top trends (1 per trend per pass) + map article->trend headline
   const { topStoryIds, trendByArticle } = useMemo(() => {
     const trendMap = new Map<number, string>();
     if (!trends?.length) return { topStoryIds: [] as number[], trendByArticle: trendMap };
     const seen = new Set<number>();
     const ids: number[] = [];
-    for (const t of trends.slice(0, 6)) {
-      for (const aid of t.article_ids ?? []) {
-        if (!seen.has(aid)) {
-          seen.add(aid);
-          ids.push(aid);
-          trendMap.set(aid, t.headline);
+    const trendArticles = trends.slice(0, 6).map((t) => ({
+      headline: t.headline,
+      aids: [...(t.article_ids ?? [])],
+    }));
+    // Round-robin: take one article from each trend per pass
+    let added = true;
+    while (added && ids.length < 20) {
+      added = false;
+      for (const t of trendArticles) {
+        while (t.aids.length > 0) {
+          const aid = t.aids.shift()!;
+          if (!seen.has(aid)) {
+            seen.add(aid);
+            ids.push(aid);
+            trendMap.set(aid, t.headline);
+            added = true;
+            break;
+          }
         }
+        if (ids.length >= 20) break;
       }
     }
     return { topStoryIds: ids, trendByArticle: trendMap };
@@ -39,18 +52,13 @@ export default function Dashboard() {
 
   const { data: topStoryArticles } = useArticlesByIds(topStoryIds);
 
-  // Filter out summary-only articles, boost those with company mentions, maintain trend rank
+  // Filter out summary-only articles, preserve round-robin order
   const topStories = useMemo(() => {
     if (!topStoryArticles?.length) return [];
     const map = new Map(topStoryArticles.map((a) => [a.id, a]));
     return topStoryIds
       .map((id) => map.get(id))
-      .filter((a): a is NonNullable<typeof a> => !!a && a.content_source !== "summary")
-      .sort((a, b) => {
-        const aScore = (a.companies?.length ?? 0) > 0 ? 1 : 0;
-        const bScore = (b.companies?.length ?? 0) > 0 ? 1 : 0;
-        return bScore - aScore;
-      });
+      .filter((a): a is NonNullable<typeof a> => !!a && a.content_source !== "summary");
   }, [topStoryArticles, topStoryIds]);
 
   const leadStories = useMemo(() => {
