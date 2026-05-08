@@ -135,15 +135,17 @@ export default function Dashboard() {
       })()}
 
       {/* Trending Topics */}
-      <section className="py-6 border-t border-stone-300">
+      <section className="py-6">
         <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Trending Topics</h3>
         <div className="h-px bg-stone-900 mb-4" />
         {(!trends || trends.length === 0) ? (
           <EmptyState message="No trending topics yet. Topics appear after the trend analysis agent processes article data." />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {trends.slice(0, 6).map((t) => (
-              <div key={t.rank} className="border-b border-stone-200 pb-3">
+            {trends.slice(0, 6).map((t, i, arr) => {
+              const isBottomRow = i >= arr.length - (arr.length % 2 === 1 ? 1 : 2);
+              return (
+              <div key={t.rank} className={`pb-3 ${isBottomRow ? "" : "border-b border-stone-200"}`}>
                 <div className="flex items-start gap-2">
                   <span className="font-sans text-xs font-bold text-stone-400 mt-0.5">{t.rank}</span>
                   <div>
@@ -167,7 +169,8 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
