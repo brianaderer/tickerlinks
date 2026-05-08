@@ -11,6 +11,33 @@ from app.extensions import db
 from app.models import TrendSnapshot
 from app.signals.llm_utils import parse_llm_json
 from app.signals.research import research_company
+from app.signals.research.agent import run_research
+
+from langchain_core.tools import tool
+
+
+@tool
+def research_company_brief(symbol: str, context: str) -> str:
+    """Search the article database for a company. Returns summaries only.
+
+    Args:
+        symbol: Ticker symbol (e.g. "NVDA")
+        context: What to research - signals, themes, questions to answer
+
+    Returns:
+        Up to 10 article summaries with dates and metadata.
+    """
+    docs = run_research(symbol, context)
+    if not docs:
+        return "No articles found."
+    parts = []
+    for d in docs:
+        text = d.get("summary") or d.get("title") or "No summary"
+        parts.append(
+            f"[{d['published_at']}] {d['title']} ({d['source_name']})\n"
+            f"Sentiment: {d['sentiment']}\n{text}"
+        )
+    return "\n\n---\n\n".join(parts)
 from app.trends.prompts import ANALYZE_SYSTEM, SYNTHESIZE_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -127,7 +154,7 @@ def analyze_trends(articles: list[dict], today: str) -> list[dict]:
         logger.warning("No LLM configured, skipping trend analysis")
         return []
 
-    llm_with_tools = llm.bind_tools([research_company])
+    llm_with_tools = llm.bind_tools([research_company_brief])
     topic_data = _format_topic_data(articles)
 
     messages = [
@@ -154,7 +181,7 @@ def analyze_trends(articles: list[dict], today: str) -> list[dict]:
                 ))
                 continue
             logger.info("Trending research call: %s", tc["args"])
-            result = research_company.invoke(tc["args"])
+            result = research_company_brief.invoke(tc["args"])
             messages.append(ToolMessage(content=result, tool_call_id=tc["id"]))
             research_calls += 1
 
@@ -233,6 +260,87 @@ def synthesize_trends(candidates: list[dict], articles: list[dict], today: str) 
     return final
 
 
+SIMILARITY_THRESHOLD = 0.80
+MAX_DEDUP_ROUNDS = 2
+
+MERGE_PROMPT = """You previously generated these trends, but some are too similar to each other. The following groups were flagged as near-duplicates by cosine similarity on their headlines:
+
+{groups}
+
+MERGE each group into a single consolidated trend. Keep the strongest headline, combine article_ids, union the companies and tags. Then fill the freed slots with NEW trends from the article corpus that cover DIFFERENT sectors or themes.
+
+Return the full set of 10 trends in the same JSON format:
+{{
+    "trends": [...]
+}}
+/no_think"""
+
+
+def _dedup_trends(candidates: list[dict], articles: list[dict], today: str) -> list[dict]:
+    from app.articles.processor import get_embedding_model
+    import numpy as np
+
+    headlines = [t.get("headline", "") for t in candidates]
+    if len(headlines) < 2:
+        return candidates
+
+    model = get_embedding_model()
+    embeddings = model.encode(headlines)
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms[norms == 0] = 1
+    normalized = embeddings / norms
+    sim_matrix = normalized @ normalized.T
+
+    groups = []
+    used = set()
+    for i in range(len(candidates)):
+        if i in used:
+            continue
+        group = [i]
+        for j in range(i + 1, len(candidates)):
+            if j in used:
+                continue
+            if sim_matrix[i][j] >= SIMILARITY_THRESHOLD:
+                group.append(j)
+                used.add(j)
+        if len(group) > 1:
+            groups.append(group)
+            used.update(group)
+
+    if not groups:
+        logger.info("Dedup: no similar trends found (threshold=%.2f)", SIMILARITY_THRESHOLD)
+        return candidates
+
+    group_text = ""
+    for g in groups:
+        items = [f"  Rank {candidates[i].get('rank','?')}: {candidates[i].get('headline','')}" for i in g]
+        sims = [f"{sim_matrix[g[0]][j]:.2f}" for j in g[1:]]
+        group_text += f"GROUP (similarities: {', '.join(sims)}):\n" + "\n".join(items) + "\n\n"
+
+    logger.info("Dedup: found %d groups of similar trends, sending back for merge", len(groups))
+
+    llm = _get_llm(max_tokens=2000)
+    if not llm:
+        return candidates
+
+    topic_data = _format_topic_data(articles)
+    messages = [
+        SystemMessage(content=ANALYZE_SYSTEM.format(today=today)),
+        HumanMessage(content=(
+            f"Article corpus ({min(len(articles), 100)} articles):\n{topic_data}\n\n"
+            + MERGE_PROMPT.format(groups=group_text)
+        )),
+    ]
+
+    response = llm.invoke(messages)
+    text = _strip_think(response.content)
+    parsed = parse_llm_json(text)
+    if parsed and parsed.get("trends"):
+        return parsed["trends"]
+
+    return candidates
+
+
 def run_trending_agent() -> TrendSnapshot:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -247,6 +355,13 @@ def run_trending_agent() -> TrendSnapshot:
         logger.info("No trend candidates identified")
         snapshot = _upsert_snapshot([], datetime.now(timezone.utc))
         return snapshot
+
+    for rnd in range(MAX_DEDUP_ROUNDS):
+        deduped = _dedup_trends(candidates, articles, today)
+        if deduped is candidates:
+            break
+        candidates = deduped
+        logger.info("Dedup round %d complete, %d trends", rnd + 1, len(candidates))
 
     trends = synthesize_trends(candidates, articles, today)
     trends = _resolve_article_ids(trends)
