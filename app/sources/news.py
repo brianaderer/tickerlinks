@@ -65,18 +65,19 @@ class NewsFetcher(BaseFetcher):
             db.session.add(article)
             db.session.flush()
 
-            from app.tasks.articles import process_article
-            process_article.delay(article.id)
-
-            articles.append(
-                {
-                    "title": title[:100],
-                    "source": source.name,
-                }
-            )
+            articles.append({
+                "id": article.id,
+                "title": title[:100],
+                "source": source.name,
+            })
 
         source.last_polled = now
         db.session.commit()
+
+        from app.tasks.articles import process_article
+        for a in articles:
+            process_article.delay(a["id"])
+
         logger.info("Stored %d new articles from %s (queued for processing)", len(articles), source.name)
         return articles
 
