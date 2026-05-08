@@ -249,11 +249,68 @@ def run_trending_agent() -> TrendSnapshot:
         return snapshot
 
     trends = synthesize_trends(candidates, articles, today)
+    trends = _resolve_article_ids(trends)
 
     now = datetime.now(timezone.utc)
     snapshot = _upsert_snapshot(trends, now)
     logger.info("Trending: %d trends generated", len(trends))
     return snapshot
+
+
+def _resolve_article_ids(trends: list[dict]) -> list[dict]:
+    """Replace LLM-picked article IDs with actual Typesense search results per trend."""
+    from app.articles.processor import get_typesense_client, ensure_collection, COLLECTION_NAME
+    from app.models import NewsArticle
+
+    client = get_typesense_client()
+    ensure_collection()
+
+    cutoff_ts = int((datetime.now(timezone.utc) - timedelta(days=7)).timestamp())
+    scraped_ids = set(
+        row[0] for row in
+        NewsArticle.query.with_entities(NewsArticle.id)
+        .filter(NewsArticle.content_source == "scraped")
+        .all()
+    )
+
+    for t in trends:
+        queries = []
+        for tag in t.get("top_tags", [])[:4]:
+            queries.append(tag)
+        if t.get("companies"):
+            from app.models import Company
+            for sym in t["companies"][:3]:
+                comp = Company.query.filter_by(symbol=sym).first()
+                queries.append(f"{comp.name} {sym}" if comp else sym)
+        if not queries:
+            queries.append(t.get("headline", "")[:80])
+
+        seen = set()
+        aids = []
+        try:
+            for q in queries:
+                if len(aids) >= 10:
+                    break
+                results = client.collections[COLLECTION_NAME].documents.search({
+                    "q": q,
+                    "query_by": "title,document",
+                    "filter_by": f"chunk_index:0 && published_at_ts:>={cutoff_ts}",
+                    "per_page": 15,
+                    "sort_by": "_text_match:desc",
+                })
+                for hit in results.get("hits", []):
+                    aid = hit["document"].get("article_id")
+                    if aid and aid not in seen and aid in scraped_ids:
+                        seen.add(aid)
+                        aids.append(aid)
+                    if len(aids) >= 10:
+                        break
+            t["article_ids"] = aids
+            logger.debug("Trend '%s': resolved %d article IDs", t.get("headline", "")[:40], len(aids))
+        except Exception:
+            logger.exception("Failed to resolve articles for trend: %s", t.get("headline", "")[:40])
+
+    return trends
 
 
 def _upsert_snapshot(trends: list[dict], now: datetime) -> TrendSnapshot:
