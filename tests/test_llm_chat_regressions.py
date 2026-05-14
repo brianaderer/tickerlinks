@@ -114,3 +114,37 @@ def test_sector_outlook_tool_failure_does_not_500(monkeypatch):
     assert res.status_code == 200
     body = res.get_json()
     assert "Sector outlook" in body["response"]
+
+
+def test_tool_budget_exhaustion_returns_non_empty_answer(monkeypatch):
+    llm = _SequencedLLM(
+        [
+            {
+                "content": "",
+                "tool_calls": [
+                    {"id": "tc-1", "name": "ticker_bets", "args": {"symbol": "AAPL", "horizon_days": 10}}
+                ],
+            },
+            {"content": "Final synthesized response after tool budget.", "tool_calls": []},
+        ]
+    )
+
+    monkeypatch.setenv("DEEPINFRA_API_KEY", "test-key")
+    monkeypatch.setattr(chat_module, "ChatOpenAI", lambda *args, **kwargs: llm)
+    monkeypatch.setattr(chat_module, "LINKY_TOOLS", [_FakeTool("ticker_bets", lambda _args: "tool output")])
+    monkeypatch.setattr(chat_module, "sse_publish", lambda *args, **kwargs: None)
+    monkeypatch.setattr(chat_module, "MAX_TOOL_CALLS", 1)
+
+    app = create_app()
+    client = app.test_client()
+    res = client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "Can you give me a 10 day comprehensive forecast for AAPL and cohorts?"}],
+            "page_context": "ChatDrawer",
+        },
+    )
+
+    assert res.status_code == 200
+    body = res.get_json()
+    assert body["response"] == "Final synthesized response after tool budget."

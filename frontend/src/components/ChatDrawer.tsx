@@ -3,7 +3,30 @@ import { useAppStore } from "../store";
 import type { ChatMessage } from "../store";
 import { API_URL } from "../api/client";
 import { HiOutlineXMark, HiOutlinePaperAirplane } from "react-icons/hi2";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+
+function normalizeChatMarkdown(raw: string) {
+  let text = raw || "";
+  text = text.replace(
+    /(\|[^\n]+?\|)\s*(\|[-:\s|]{3,}\|)\s*(\|[^\n]+?\|)/g,
+    "$1\n$2\n$3",
+  );
+  text = text.replace(/\|\|\s*(?=\|?[$A-Za-z0-9])/g, "|\n|");
+  return text;
+}
+
+const markdownComponents: Components = {
+  table: ({ children }) => (
+    <div className="my-2 overflow-x-auto">
+      <table className="min-w-full border-collapse text-xs">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="border-b border-stone-300">{children}</thead>,
+  tr: ({ children }) => <tr className="border-b border-stone-200 last:border-0">{children}</tr>,
+  th: ({ children }) => <th className="px-2 py-1 text-left font-semibold">{children}</th>,
+  td: ({ children }) => <td className="px-2 py-1 align-top">{children}</td>,
+};
 
 export default function ChatDrawer() {
   const chatOpen = useAppStore((s) => s.chatOpen);
@@ -120,7 +143,9 @@ export default function ChatDrawer() {
               >
                 {msg.role === "assistant" ? (
                   <div className="font-body prose prose-stone prose-sm max-w-none">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                      {normalizeChatMarkdown(msg.content)}
+                    </ReactMarkdown>
                   </div>
                 ) : (
                   msg.content

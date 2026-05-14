@@ -41,7 +41,7 @@ RULES:
 MAX_TOOL_CALLS = 5
 TICKERBETS_RE = re.compile(r"\bticker[\s-]?bets?\b", re.IGNORECASE)
 OVERLAY_RE = re.compile(
-    r"\b(agree|disagree|correct|likely|right|wrong|overlay|reconcile|compare|consistent|line\s*up|align)\b",
+    r"\b(agree|disagree|correct|likely|right|wrong|overlay|reconcile|compare|consistent|line\s*up|align|assess|assessment|factor|influence|decision|trust|reliable)\b",
     re.IGNORECASE,
 )
 RANK_RE = re.compile(
@@ -68,6 +68,7 @@ SECTOR_OUTLOOK_RE = re.compile(
     r"\b(sector|industry)\b.*\b(outlook|view|setup|looking)\b|\b(outlook|view|setup)\b.*\b(sector|industry)\b",
     re.IGNORECASE,
 )
+TICKER_TOKEN_RE = re.compile(r"\b[A-Za-z]{1,5}\b")
 
 
 def _needs_tickerbets_overlay(user_text: str) -> bool:
@@ -128,6 +129,53 @@ def _needs_sector_outlook_grounding(user_text: str) -> bool:
     return bool(SECTOR_OUTLOOK_RE.search(user_text or ""))
 
 
+def _extract_symbols_from_text(user_text: str) -> list[str]:
+    from app.models import Company
+
+    text = user_text or ""
+    candidates = {tok.upper() for tok in TICKER_TOKEN_RE.findall(text)}
+    if not candidates:
+        return []
+    rows = (
+        Company.query.with_entities(Company.symbol)
+        .filter(Company.active.is_(True), Company.symbol.in_(candidates))
+        .all()
+    )
+    return [row[0] for row in rows]
+
+
+def _needs_direct_tickerbets_grounding(user_text: str) -> bool:
+    text = user_text or ""
+    if not TICKERBETS_RE.search(text):
+        return False
+    if _needs_tickerbets_overlay(text) or _needs_tickerbets_ranking(text):
+        return False
+    return bool(_extract_symbols_from_text(text))
+
+
+def _extract_response_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                chunks.append(item)
+                continue
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if isinstance(text, str):
+                    chunks.append(text)
+                continue
+            text = getattr(item, "text", None)
+            if isinstance(text, str):
+                chunks.append(text)
+        return "\n".join([c for c in chunks if c]).strip()
+    if content is None:
+        return ""
+    return str(content)
+
+
 @bp.route("/chat", methods=["POST"])
 def chat():
     body = request.get_json(force=True)
@@ -142,9 +190,10 @@ def chat():
         return jsonify({"error": "LLM not configured"}), 503
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    chat_model = os.environ.get("LINKY_MODEL") or os.environ.get("LLM_MODEL", "Qwen/Qwen3-14B")
 
     llm = ChatOpenAI(
-        model="Qwen/Qwen3-14B",
+        model=chat_model,
         openai_api_key=api_key,
         openai_api_base=os.environ.get("LLM_API_BASE", "https://api.deepinfra.com/v1/openai"),
         temperature=0.3,
@@ -170,6 +219,15 @@ def chat():
             lc_messages.append(AIMessage(content=content))
 
     latest_user_message = next((m.get("content", "") for m in reversed(history) if m.get("role") == "user"), "")
+    if _needs_direct_tickerbets_grounding(latest_user_message):
+        symbols = _extract_symbols_from_text(latest_user_message)
+        if symbols:
+            lc_messages.append(SystemMessage(
+                content=(
+                    f"For this question, call ticker_bets for these symbol(s): {', '.join(symbols)}. "
+                    "Do not provide any tickerbets numbers unless they come from tool output."
+                )
+            ))
     if _needs_followup_ticker_resolution(latest_user_message):
         prior_tickers = _extract_recent_assistant_tickers(history)
         if prior_tickers:
@@ -219,8 +277,19 @@ def chat():
         tool_calls_made = 0
         must_ground_followup = _needs_followup_ticker_resolution(latest_user_message)
         forced_grounding_retry = False
+        response = None
 
         for _ in range(MAX_TOOL_CALLS + 1):
+            if tool_calls_made >= MAX_TOOL_CALLS:
+                lc_messages.append(SystemMessage(
+                    content=(
+                        "Tool-call budget reached. Provide the best possible final answer using the available "
+                        "tool outputs and prior context. Do not call any additional tools."
+                    )
+                ))
+                response = llm.invoke(lc_messages)
+                break
+
             response = llm_with_tools.invoke(lc_messages)
 
             if (
@@ -239,7 +308,7 @@ def chat():
                 ))
                 continue
 
-            if not response.tool_calls or tool_calls_made >= MAX_TOOL_CALLS:
+            if not response.tool_calls:
                 break
 
             lc_messages.append(response)
@@ -271,8 +340,27 @@ def chat():
                 lc_messages.append(ToolMessage(content=result, tool_call_id=tc["id"]))
                 tool_calls_made += 1
 
-        text = response.content or ""
+        if response is None:
+            response = llm.invoke(lc_messages)
+
+        text = _extract_response_text(getattr(response, "content", ""))
         text = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+        if not text:
+            fallback = llm.invoke(
+                lc_messages
+                + [
+                    SystemMessage(
+                        content=(
+                            "Provide a concise final answer from the available context and tool outputs. "
+                            "Do not call tools."
+                        )
+                    )
+                ]
+            )
+            text = _extract_response_text(getattr(fallback, "content", ""))
+            text = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+        if not text:
+            text = "I'm sorry — I couldn't produce a response just now. Please try again."
 
         return jsonify({"response": text})
 
