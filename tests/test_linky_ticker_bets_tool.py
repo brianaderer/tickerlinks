@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date
 from types import SimpleNamespace
 
 from app.api.linky_tools import (
@@ -54,10 +54,15 @@ def test_ticker_bets_error_path_includes_disclaimer(monkeypatch):
     assert TICKERBETS_DISCLAIMER in output
 
 
-def test_resolve_tickerbets_target_date_caps_horizon_to_10_days():
+def test_resolve_tickerbets_target_date_caps_horizon_to_10_days(monkeypatch):
+    monkey_dates = [date(2026, 5, 15), date(2026, 5, 16), date(2026, 5, 19), date(2026, 5, 20)]
+    monkeypatch.setattr(
+        "app.tickerbets.service.available_target_dates",
+        lambda min_days_ahead=1, max_days_ahead=10: monkey_dates[:max_days_ahead],
+    )
     resolved = _resolve_tickerbets_target_date("", 999)
-    expected = (datetime.now(timezone.utc).date() + timedelta(days=10)).isoformat()
-    assert resolved == expected
+
+    assert resolved == monkey_dates[-1].isoformat()
 
 
 def test_ticker_bets_can_include_metrics_and_directional_accuracy(monkeypatch):

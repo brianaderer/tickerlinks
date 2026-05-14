@@ -1,5 +1,7 @@
 from app.api.chat import (
     _directional_accuracy_already_mentioned,
+    _needs_followup_ticker_resolution,
+    _needs_sector_outlook_grounding,
     _needs_tickerbets_overlay,
     _needs_tickerbets_ranking,
 )
@@ -31,3 +33,17 @@ def test_directional_accuracy_mention_detection():
         {"role": "assistant", "content": "Directional accuracy is 57.7% for this run."},
     ]
     assert _directional_accuracy_already_mentioned(history) is True
+
+
+def test_followup_resolution_detects_them_prediction_request():
+    text = "Can you get price predictions for them?"
+    assert _needs_followup_ticker_resolution(text) is True
+
+
+def test_followup_resolution_detects_you_mentioned_first_phrase():
+    text = "No, I meant for the stocks you mentioned first."
+    assert _needs_followup_ticker_resolution(text) is True
+
+
+def test_sector_outlook_grounding_trigger_detects_sector_question():
+    assert _needs_sector_outlook_grounding("what is the tech sector outlook") is True

@@ -2,9 +2,9 @@ from datetime import date
 
 from app.tickerbets.features import HORIZONS
 from app.tickerbets.service import (
-    _horizon_days_from_requested,
     _normalize_target_date,
     _parse_target_date,
+    _resolve_horizon_for_target_date,
     available_target_dates,
 )
 
@@ -28,10 +28,12 @@ def test_tickerbets_horizons_cover_1_to_10_days():
     assert len(HORIZONS) == 10
 
 
-def test_horizon_days_from_requested_uses_requested_date_not_weekday_adjustment():
+def test_resolve_horizon_uses_trading_day_index():
     as_of = date(2026, 5, 14)
-    requested_weekend = date(2026, 5, 24)
-    assert _horizon_days_from_requested(requested_weekend, as_of) == 10
+    requested = date(2026, 5, 29)
+    horizon, resolved = _resolve_horizon_for_target_date(requested, as_of)
+    assert resolved == requested
+    assert horizon == 10
 
 
 def test_normalize_target_date_skips_market_holidays():
@@ -48,4 +50,5 @@ def test_available_target_dates_exclude_weekends_and_market_holidays():
 
     assert dates
     assert dates[0] == date(2026, 7, 6)
+    assert len(dates) == 10
     assert all(d.weekday() < 5 for d in dates)
