@@ -84,20 +84,19 @@ class FundamentalsDetector(SignalDetector):
     def _check_insider_cluster(self, company_id: int, symbol: str, trades: list[dict]) -> list[SignalData]:
         now = datetime.now(timezone.utc).date()
         cutoff = now - timedelta(days=self.insider_cluster_window_days)
+        valid_window = lambda d: d and cutoff <= d <= now
 
         recent_buys = [
             t for t in trades
             if t.get("transaction_type") == "Purchase"
             and t.get("shares", 0) > 0
-            and t.get("date")
-            and t["date"] >= cutoff
+            and valid_window(t.get("date"))
         ]
         recent_sells = [
             t for t in trades
             if t.get("transaction_type") == "Sale"
             and t.get("shares", 0) > 0
-            and t.get("date")
-            and t["date"] >= cutoff
+            and valid_window(t.get("date"))
         ]
 
         signals = []

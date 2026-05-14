@@ -22,7 +22,7 @@ class _SequencedLLM:
         return self
 
     def invoke(self, messages):
-        self.calls.append(messages)
+        self.calls.append(list(messages))
         if not self._responses:
             return SimpleNamespace(content="", tool_calls=[])
         nxt = self._responses.pop(0)
@@ -148,3 +148,96 @@ def test_tool_budget_exhaustion_returns_non_empty_answer(monkeypatch):
     assert res.status_code == 200
     body = res.get_json()
     assert body["response"] == "Final synthesized response after tool budget."
+
+
+def test_tickerbets_disclaimer_instruction_injected_once_after_first_tool_call(monkeypatch):
+    llm = _SequencedLLM(
+        [
+            {
+                "content": "",
+                "tool_calls": [
+                    {"id": "tc-1", "name": "ticker_bets", "args": {"symbol": "AAPL", "horizon_days": 1}}
+                ],
+            },
+            {
+                "content": "",
+                "tool_calls": [
+                    {"id": "tc-2", "name": "ticker_bets", "args": {"symbol": "MSFT", "horizon_days": 1}}
+                ],
+            },
+            {"content": "Done", "tool_calls": []},
+        ]
+    )
+
+    monkeypatch.setenv("DEEPINFRA_API_KEY", "test-key")
+    monkeypatch.setattr(chat_module, "ChatOpenAI", lambda *args, **kwargs: llm)
+    monkeypatch.setattr(chat_module, "_extract_symbols_from_text", lambda _text: [])
+    monkeypatch.setattr(
+        chat_module,
+        "LINKY_TOOLS",
+        [_FakeTool("ticker_bets", lambda _args: "tool output")],
+    )
+    monkeypatch.setattr(chat_module, "sse_publish", lambda *args, **kwargs: None)
+
+    app = create_app()
+    client = app.test_client()
+    res = client.post(
+        "/api/chat",
+        json={
+            "messages": [{"role": "user", "content": "give me tickerbets for aapl then msft"}],
+            "page_context": "ChatDrawer",
+        },
+    )
+
+    assert res.status_code == 200
+    phrase = "first ticker_bets tool call in this conversation"
+    per_call_counts = [
+        sum(1 for msg in call if phrase in getattr(msg, "content", ""))
+        for call in llm.calls
+    ]
+    assert per_call_counts[0] == 0
+    assert max(per_call_counts) == 1
+
+
+def test_tickerbets_disclaimer_not_reinjected_when_already_in_history(monkeypatch):
+    llm = _SequencedLLM(
+        [
+            {
+                "content": "",
+                "tool_calls": [
+                    {"id": "tc-1", "name": "ticker_bets", "args": {"symbol": "AAPL", "horizon_days": 1}}
+                ],
+            },
+            {"content": "Done", "tool_calls": []},
+        ]
+    )
+
+    monkeypatch.setenv("DEEPINFRA_API_KEY", "test-key")
+    monkeypatch.setattr(chat_module, "ChatOpenAI", lambda *args, **kwargs: llm)
+    monkeypatch.setattr(chat_module, "_extract_symbols_from_text", lambda _text: [])
+    monkeypatch.setattr(
+        chat_module,
+        "LINKY_TOOLS",
+        [_FakeTool("ticker_bets", lambda _args: "tool output")],
+    )
+    monkeypatch.setattr(chat_module, "sse_publish", lambda *args, **kwargs: None)
+
+    app = create_app()
+    client = app.test_client()
+    res = client.post(
+        "/api/chat",
+        json={
+            "messages": [
+                {"role": "assistant", "content": chat_module.TICKERBETS_DISCLAIMER},
+                {"role": "user", "content": "tickerbets for aapl"},
+            ],
+            "page_context": "ChatDrawer",
+        },
+    )
+
+    assert res.status_code == 200
+    assert not any(
+        "first ticker_bets tool call in this conversation" in getattr(msg, "content", "")
+        for call in llm.calls
+        for msg in call
+    )

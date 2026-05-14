@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
 from app.sse.publisher import sse_publish
-from app.api.linky_tools import LINKY_TOOLS
+from app.api.linky_tools import LINKY_TOOLS, TICKERBETS_DISCLAIMER
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,7 @@ RULES:
 - Each reply should add new insight or directly answer the new question
 - If the user uses follow-up pronouns like "them/those/these", resolve them to the most recent ticker set in context instead of substituting a new list
 - Mention directional accuracy at most once per conversation unless the user explicitly asks about model accuracy/statistics
-- Any response that includes TickerBets information MUST include this disclaimer verbatim:
-  Tickerbets provides experimental, model-based price estimates derived from historical data patterns. These outputs are not financial advice, investment recommendations, or guarantees of future performance, and should not be the sole basis for trading decisions."""
+"""
 
 MAX_TOOL_CALLS = 5
 TICKERBETS_RE = re.compile(r"\bticker[\s-]?bets?\b", re.IGNORECASE)
@@ -69,6 +68,10 @@ SECTOR_OUTLOOK_RE = re.compile(
     re.IGNORECASE,
 )
 TICKER_TOKEN_RE = re.compile(r"\b[A-Za-z]{1,5}\b")
+TICKERBETS_DISCLAIMER_RE = re.compile(
+    r"tickerbets provides experimental, model-based price estimates",
+    re.IGNORECASE,
+)
 
 
 def _needs_tickerbets_overlay(user_text: str) -> bool:
@@ -84,6 +87,15 @@ def _directional_accuracy_already_mentioned(history: list[dict]) -> bool:
         if msg.get("role") != "assistant":
             continue
         if re.search(r"directional\s+accuracy", msg.get("content", ""), re.IGNORECASE):
+            return True
+    return False
+
+
+def _tickerbets_disclaimer_already_mentioned(history: list[dict]) -> bool:
+    for msg in history:
+        if msg.get("role") != "assistant":
+            continue
+        if TICKERBETS_DISCLAIMER_RE.search(msg.get("content", "") or ""):
             return True
     return False
 
@@ -206,6 +218,7 @@ def chat():
         SystemMessage(content=SYSTEM_PROMPT.format(today=today, page_context=page_context)),
     ]
     history = messages[-10:]
+    disclaimer_already_mentioned = _tickerbets_disclaimer_already_mentioned(history)
     for i, msg in enumerate(history):
         role = msg.get("role", "user")
         content = msg.get("content", "")
@@ -275,6 +288,7 @@ def chat():
     try:
         tool_map = {t.name: t for t in LINKY_TOOLS}
         tool_calls_made = 0
+        disclaimer_instruction_injected = False
         must_ground_followup = _needs_followup_ticker_resolution(latest_user_message)
         forced_grounding_retry = False
         response = None
@@ -312,6 +326,7 @@ def chat():
                 break
 
             lc_messages.append(response)
+            tickerbets_tool_called = False
             for tc in response.tool_calls:
                 if tool_calls_made >= MAX_TOOL_CALLS:
                     lc_messages.append(ToolMessage(
@@ -338,8 +353,21 @@ def chat():
                     logger.exception("Linky tool failed: %s", tool_name)
                     result = f"Tool {tool_name} failed: {tool_exc}"
                 lc_messages.append(ToolMessage(content=result, tool_call_id=tc["id"]))
+                if tool_name.startswith("ticker_bets"):
+                    tickerbets_tool_called = True
                 tool_calls_made += 1
 
+
+            if tickerbets_tool_called and not disclaimer_already_mentioned and not disclaimer_instruction_injected:
+                lc_messages.append(SystemMessage(
+                    content=(
+                        "This is the first ticker_bets tool call in this conversation. "
+                        "In your next final answer, include this disclaimer verbatim exactly once:\n"
+                        f"{TICKERBETS_DISCLAIMER}"
+                    )
+                ))
+                disclaimer_instruction_injected = True
+                disclaimer_already_mentioned = True
         if response is None:
             response = llm.invoke(lc_messages)
 
