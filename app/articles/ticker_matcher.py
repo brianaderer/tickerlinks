@@ -106,7 +106,7 @@ Identify all tracked companies mentioned in or relevant to this article."""
             HumanMessage(content=user_msg),
         ])
         result = parse_llm_json(response.content)
-        if not result:
+        if not isinstance(result, dict):
             return {}
 
         companies = result.get("companies", {})

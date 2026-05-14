@@ -182,3 +182,53 @@ def backfill_prices_command():
     from app.tasks.maintenance import backfill_all
     result = backfill_all.delay()
     click.echo(f"Backfill queued: {result.id}")
+
+
+@click.command("replay-history")
+@click.option("--days", default=90, type=int, show_default=True, help="How many days to replay")
+@click.option("--step-hours", default=6, type=int, show_default=True, help="Replay step size in hours")
+@click.option("--queue", default="backfill", show_default=True, help="Queue name for async replay")
+@click.option("--sync", is_flag=True, default=False, help="Run replay synchronously in this process")
+@click.option("--skip-trends", is_flag=True, default=False, help="Skip trend regeneration at end")
+@click.option("--skip-report", is_flag=True, default=False, help="Skip market brief regeneration at end")
+@with_appcontext
+def replay_history_command(days, step_hours, queue, sync, skip_trends, skip_report):
+    """Replay 3 months of historical signals/predictions using real stored market/news data."""
+    from app.tasks.maintenance import replay_history, replay_history_sync
+
+    include_trends = not skip_trends
+    include_report = not skip_report
+
+    if sync:
+        result = replay_history_sync(
+            days=days,
+            step_hours=step_hours,
+            include_trends=include_trends,
+            include_report=include_report,
+        )
+        click.echo(f"Replay complete: {result}")
+        return
+
+    task = replay_history.apply_async(
+        kwargs={
+            "days": days,
+            "step_hours": step_hours,
+            "include_trends": include_trends,
+            "include_report": include_report,
+        },
+        queue=queue,
+    )
+    click.echo(f"Replay queued on '{queue}': {task.id}")
+
+
+@click.command("repair-pipeline-data")
+@click.option("--queue", default="backfill", show_default=True, help="Queue name for repair tasks")
+@with_appcontext
+def repair_pipeline_data_command(queue):
+    """Queue data cleanup tasks for duplicate signal matches and polluted prediction reasoning."""
+    from app.tasks.maintenance import dedupe_signal_matches, clean_prediction_reasoning
+
+    dedupe_task = dedupe_signal_matches.apply_async(queue=queue)
+    clean_task = clean_prediction_reasoning.apply_async(queue=queue)
+    click.echo(f"Dedupe queued: {dedupe_task.id}")
+    click.echo(f"Prediction cleanup queued: {clean_task.id}")

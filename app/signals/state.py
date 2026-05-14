@@ -27,3 +27,4 @@ class EngineState(TypedDict, total=False):
     iteration: int
     max_iterations: int
     confidence_threshold: float
+    analysis_time: str

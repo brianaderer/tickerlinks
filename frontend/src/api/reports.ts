@@ -6,6 +6,8 @@ export function useReports(limit = 10) {
   return useQuery({
     queryKey: ["reports", limit],
     queryFn: () => apiFetch<Report[]>(`/reports?limit=${limit}`),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 }
 

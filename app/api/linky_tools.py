@@ -53,12 +53,23 @@ def get_company_profile(symbol: str) -> str:
             parts.append(f"  Market cap: ${fund.market_cap:,.0f}")
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-    matches = (
-        SignalMatch.query.filter(
-            SignalMatch.company_id == company.id,
-            SignalMatch.detected_at >= cutoff,
+    latest_match_subq = (
+        db.session.query(
+            func.max(SignalMatch.id).label("max_id"),
         )
-        .order_by(SignalMatch.detected_at.desc())
+        .filter(SignalMatch.detected_at >= cutoff)
+        .group_by(
+            SignalMatch.company_id,
+            SignalMatch.signal_id,
+            SignalMatch.direction,
+            func.coalesce(SignalMatch.source_at, SignalMatch.detected_at),
+        )
+        .subquery()
+    )
+    matches = (
+        SignalMatch.query.join(latest_match_subq, SignalMatch.id == latest_match_subq.c.max_id)
+        .filter(SignalMatch.company_id == company.id)
+        .order_by(SignalMatch.source_at.desc().nullslast(), SignalMatch.detected_at.desc())
         .limit(15)
         .all()
     )
@@ -276,12 +287,25 @@ def screen_stocks(sort_by: str = "prediction", direction: str = "bullish", limit
 
     elif sort_by == "signals":
         cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        dedup_subq = (
+            db.session.query(
+                func.max(SignalMatch.id).label("max_id"),
+            )
+            .filter(SignalMatch.detected_at >= cutoff)
+            .group_by(
+                SignalMatch.company_id,
+                SignalMatch.signal_id,
+                SignalMatch.direction,
+                func.coalesce(SignalMatch.source_at, SignalMatch.detected_at),
+            )
+            .subquery()
+        )
         query = (
             db.session.query(
                 SignalMatch.company_id,
                 func.count(SignalMatch.id).label("cnt"),
             )
-            .filter(SignalMatch.detected_at >= cutoff)
+            .join(dedup_subq, SignalMatch.id == dedup_subq.c.max_id)
         )
         if direction != "any":
             query = query.filter(SignalMatch.direction == direction)

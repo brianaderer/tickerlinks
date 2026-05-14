@@ -1,6 +1,5 @@
 import logging
 import os
-import re
 from datetime import datetime, timedelta, timezone
 
 from langchain_openai import ChatOpenAI
@@ -9,7 +8,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from app.extensions import db
 from app.models import Company, PriceHistory, SignalMatch, Prediction, Report
 from app.articles.indices import sentiment_score, mention_velocity, source_breadth
-from app.signals.llm_utils import parse_llm_json
+from app.signals.llm_utils import parse_llm_json, sanitize_reasoning_text, strip_llm_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -44,18 +43,6 @@ def generate_hourly_report() -> Report:
     }
 
     summary = _generate_summary(data, now)
-
-    existing = Report.query.filter_by(report_type="hourly").order_by(
-        Report.generated_at.desc()
-    ).first()
-
-    if existing:
-        existing.generated_at = now
-        existing.summary = summary
-        existing.data = data
-        db.session.commit()
-        logger.info("Updated hourly report #%d", existing.id)
-        return existing
 
     report = Report(
         report_type="hourly",
@@ -105,9 +92,23 @@ def _get_top_movers(since: datetime, limit: int = 10) -> list[dict]:
 
 
 def _get_recent_signals(since: datetime) -> list[dict]:
+    from sqlalchemy import func
+
+    latest_subq = (
+        db.session.query(func.max(SignalMatch.id).label("max_id"))
+        .filter(SignalMatch.detected_at >= since)
+        .group_by(
+            SignalMatch.company_id,
+            SignalMatch.signal_id,
+            SignalMatch.direction,
+            func.coalesce(SignalMatch.source_at, SignalMatch.detected_at),
+        )
+        .subquery()
+    )
+
     matches = (
         SignalMatch.query
-        .filter(SignalMatch.detected_at >= since)
+        .join(latest_subq, SignalMatch.id == latest_subq.c.max_id)
         .order_by(SignalMatch.detected_at.desc())
         .limit(100)
         .all()
@@ -154,7 +155,7 @@ def _get_latest_predictions() -> list[dict]:
             "direction": p.direction,
             "confidence": p.confidence,
             "magnitude": p.magnitude,
-            "reasoning": (p.reasoning or "")[:200],
+            "reasoning": sanitize_reasoning_text((p.reasoning or "")[:600])[:200],
             "signal_count": len(p.signal_matches),
             "updated_at": p.created_at.isoformat(),
         }
@@ -170,6 +171,17 @@ def _get_article_indices_snapshot() -> dict:
             key=lambda x: x[1]["total_mentions"],
             reverse=True,
         )[:10]
+        top_sentiment_serialized = {}
+        for sym, data in top_sentiment:
+            latest_pub = data.get("latest_published_at")
+            top_sentiment_serialized[sym] = {
+                "score": data.get("score", 0),
+                "bullish": data.get("bullish", 0),
+                "bearish": data.get("bearish", 0),
+                "neutral": data.get("neutral", 0),
+                "total_mentions": data.get("total_mentions", 0),
+                "latest_published_at": latest_pub.isoformat() if latest_pub else None,
+            }
 
         velocities = mention_velocity()
         spikes = {
@@ -184,7 +196,7 @@ def _get_article_indices_snapshot() -> dict:
         }
 
         return {
-            "top_sentiment": {sym: data for sym, data in top_sentiment},
+            "top_sentiment": top_sentiment_serialized,
             "mention_spikes": {sym: v.get("24h", {}) for sym, v in list(spikes.items())[:10]},
             "high_source_breadth": {sym: b["unique_sources"] for sym, b in list(high_breadth.items())[:10]},
         }
@@ -264,7 +276,12 @@ MENTION VELOCITY SPIKES:
             SystemMessage(content="You are a senior market analyst. Write concise, data-driven briefings. No preamble."),
             HumanMessage(content=SUMMARY_PROMPT.format(today=now.strftime("%Y-%m-%d %H:%M UTC"), data=context)),
         ])
-        text = re.sub(r"<think>[\s\S]*?</think>", "", response.content).strip()
+        text = strip_llm_artifacts(response.content).strip()
+        parsed = parse_llm_json(text)
+        if isinstance(parsed, dict):
+            summary = parsed.get("summary") or parsed.get("report") or parsed.get("reasoning")
+            if isinstance(summary, str):
+                return strip_llm_artifacts(summary).strip()
         return text
     except Exception:
         logger.exception("LLM summary generation failed")

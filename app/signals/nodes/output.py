@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from app.extensions import db
 from app.models import Signal, SignalMatch, Prediction
-from app.models.signal_match import prediction_match
+from app.signals.llm_utils import sanitize_reasoning_text
 from app.signals.state import EngineState
 from app.sse import sse_publish
 
@@ -20,9 +20,10 @@ def output_node(state: EngineState) -> EngineState:
     raw_signals = state.get("signals", [])
     predictions = state.get("strong_predictions", []) + state.get("weak_predictions", [])
     run_id = uuid4().hex
+    analysis_time = _analysis_now(state.get("analysis_time"))
 
-    _persist_signals(raw_signals, run_id)
-    _persist_predictions(predictions, run_id)
+    _persist_signals(raw_signals, run_id, analysis_time)
+    _persist_predictions(predictions, run_id, analysis_time)
 
     logger.info(
         "Output [%s]: persisted %d signal matches and %d predictions",
@@ -31,30 +32,30 @@ def output_node(state: EngineState) -> EngineState:
     return state
 
 
-def _persist_signals(raw_signals: list[dict], run_id: str):
-    now = datetime.now(timezone.utc)
+def _analysis_now(raw_time) -> datetime:
+    if isinstance(raw_time, datetime):
+        if raw_time.tzinfo is None:
+            return raw_time.replace(tzinfo=timezone.utc)
+        return raw_time
+    if isinstance(raw_time, str) and raw_time:
+        try:
+            parsed = datetime.fromisoformat(raw_time)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
 
-    # Delete old signal matches NOT linked to any prediction
-    company_ids = list({s["company_id"] for s in raw_signals})
-    if company_ids:
-        linked_ids = {
-            row[0] for row in
-            db.session.execute(
-                prediction_match.select().with_only_columns(
-                    prediction_match.c.signal_match_id
-                )
-            ).fetchall()
-        }
-        old_matches = SignalMatch.query.filter(
-            SignalMatch.company_id.in_(company_ids)
-        ).all()
-        old_match_ids = [m.id for m in old_matches if m.id not in linked_ids]
 
-        if old_match_ids:
-            SignalMatch.query.filter(SignalMatch.id.in_(old_match_ids)).delete(
-                synchronize_session=False
-            )
-            db.session.flush()
+def _normalize_context(data: dict | None) -> dict:
+    return {
+        k: float(v) if hasattr(v, "item") else v
+        for k, v in (data or {}).items()
+    }
+
+
+def _persist_signals(raw_signals: list[dict], run_id: str, now: datetime):
 
     signal_cache = {}
 
@@ -86,17 +87,30 @@ def _persist_signals(raw_signals: list[dict], run_id: str):
             now,
         )
 
-        match = SignalMatch(
+        existing = SignalMatch.query.filter_by(
             signal_id=signal_cache[cache_key].id,
             company_id=sig_data["company_id"],
-            confidence=float(sig_data["confidence"]),
             direction=sig_data["direction"],
-            context={k: float(v) if hasattr(v, 'item') else v for k, v in (sig_data.get("context") or {}).items()},
-            run_id=run_id,
             source_at=source_at,
-            detected_at=now,
-        )
-        db.session.add(match)
+        ).order_by(SignalMatch.detected_at.desc()).first()
+
+        if existing:
+            existing.confidence = float(sig_data["confidence"])
+            existing.context = _normalize_context(sig_data.get("context"))
+            existing.run_id = run_id
+            existing.detected_at = now
+        else:
+            match = SignalMatch(
+                signal_id=signal_cache[cache_key].id,
+                company_id=sig_data["company_id"],
+                confidence=float(sig_data["confidence"]),
+                direction=sig_data["direction"],
+                context=_normalize_context(sig_data.get("context")),
+                run_id=run_id,
+                source_at=source_at,
+                detected_at=now,
+            )
+            db.session.add(match)
 
         sse_publish("signals", "match_fired", {
             "signal": sig_name,
@@ -146,11 +160,19 @@ def _resolve_source_at(
     return new_ts or now
 
 
-def _persist_predictions(predictions: list[dict], run_id: str):
-    now = datetime.now(timezone.utc)
+def _persist_predictions(predictions: list[dict], run_id: str, now: datetime):
     target = now + timedelta(days=7)
 
     for pred in predictions:
+        reasoning = sanitize_reasoning_text(pred.get("reasoning", ""))
+        if not reasoning:
+            signal_names = pred.get("signal_names", [])
+            signal_summary = ", ".join(signal_names[:6]) if signal_names else "active signals"
+            reasoning = (
+                f"{pred['direction'].title()} outlook based on {len(signal_names)} "
+                f"signals: {signal_summary}."
+            )
+
         existing = Prediction.query.filter_by(
             company_id=pred["company_id"]
         ).order_by(Prediction.created_at.desc()).first()
@@ -159,7 +181,7 @@ def _persist_predictions(predictions: list[dict], run_id: str):
             existing.direction = pred["direction"]
             existing.confidence = float(pred["confidence"])
             existing.magnitude = float(pred["magnitude"]) if pred.get("magnitude") is not None else None
-            existing.reasoning = pred.get("reasoning", "")
+            existing.reasoning = reasoning
             existing.target_date = target
             existing.created_at = now
             db.session.flush()
@@ -170,7 +192,7 @@ def _persist_predictions(predictions: list[dict], run_id: str):
                 direction=pred["direction"],
                 confidence=float(pred["confidence"]),
                 magnitude=float(pred["magnitude"]) if pred.get("magnitude") is not None else None,
-                reasoning=pred.get("reasoning", ""),
+                reasoning=reasoning,
                 target_date=target,
                 created_at=now,
             )

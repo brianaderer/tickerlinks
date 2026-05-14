@@ -76,7 +76,7 @@ Content:
             HumanMessage(content=user_msg),
         ])
         result = parse_llm_json(response.content)
-        if result:
+        if isinstance(result, dict):
             topics = result.get("topics", [])
             if len(topics) > 5:
                 topics = topics[:5]

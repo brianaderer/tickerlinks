@@ -23,6 +23,14 @@ class SignalMatch(db.Model):
     __tablename__ = "signal_matches"
     __table_args__ = (
         db.Index("ix_match_company_detected", "company_id", "detected_at"),
+        db.Index(
+            "ux_signal_match_event",
+            "company_id",
+            "signal_id",
+            "direction",
+            "source_at",
+            unique=True,
+        ),
     )
 
     id = db.Column(db.Integer, primary_key=True)

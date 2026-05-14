@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useParams, Link } from "@tanstack/react-router";
 import { useCompany, useCompanyPrices } from "../api/companies";
 import { useSignalMatches } from "../api/signals";
@@ -17,9 +18,29 @@ export default function CompanyDetail() {
   const { data: predictions, isLoading: predsLoading } = usePredictions(symbol);
   const runPrediction = useRunPrediction(symbol!);
   const isPending = useAppStore((s) => s.pendingPredictions.has(symbol!));
+  const pendingStartedAt = useAppStore((s) => (symbol ? s.pendingPredictionStartedAt[symbol] : undefined));
+  const removePendingPrediction = useAppStore((s) => s.removePendingPrediction);
+  const pruneStalePendingPredictions = useAppStore((s) => s.pruneStalePendingPredictions);
   const { data: articles, isLoading: articlesLoading } = useArticles(symbol);
 
   const loading = pricesLoading || matchesLoading || predsLoading || articlesLoading;
+
+  useEffect(() => {
+    pruneStalePendingPredictions();
+  }, [pruneStalePendingPredictions]);
+
+  useEffect(() => {
+    if (!symbol || !isPending || !predictions || predictions.length === 0) return;
+    if (!pendingStartedAt) {
+      removePendingPrediction(symbol);
+      return;
+    }
+    const latestPredictionTs = new Date(predictions[0].created_at).getTime();
+    if (!Number.isFinite(latestPredictionTs)) return;
+    if (latestPredictionTs >= pendingStartedAt - 30_000) {
+      removePendingPrediction(symbol);
+    }
+  }, [symbol, isPending, pendingStartedAt, predictions, removePendingPrediction]);
 
   const companyHeader = (
     <div className="border-b-2 border-stone-900 pb-3">

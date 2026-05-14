@@ -7,6 +7,7 @@ export function useSSE() {
   const queryClient = useQueryClient();
   const esRef = useRef<EventSource | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const connectRef = useRef<() => void>(() => undefined);
   const retryCount = useRef(0);
   const ready = useRef(false);
 
@@ -33,7 +34,7 @@ export function useSSE() {
       esRef.current = null;
       retryCount.current += 1;
       const delay = Math.min(5000 * Math.pow(2, retryCount.current - 1), 60000);
-      reconnectTimer.current = setTimeout(connect, delay);
+      reconnectTimer.current = setTimeout(() => connectRef.current(), delay);
     };
 
     const trackId = (e: MessageEvent) => { if (e.lastEventId) setLastId(e.lastEventId); };
@@ -52,7 +53,6 @@ export function useSSE() {
 
     es.addEventListener("signals:analysis_started", (e: MessageEvent) => {
       trackId(e);
-      if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
         if (data.mode === "manual" && data.symbol) {
@@ -63,20 +63,31 @@ export function useSSE() {
 
     es.addEventListener("signals:analysis_complete", (e: MessageEvent) => {
       trackId(e);
-      if (!ready.current) return;
       try {
         const data = JSON.parse(e.data);
         if (data.mode === "manual" && data.symbol) {
           useAppStore.getState().removePendingPrediction(data.symbol);
           if (data.prediction) {
             queryClient.setQueryData(["predictions", data.symbol, undefined], (old: unknown[] | undefined) => {
-              const existing = (old || []) as any[];
-              return [data.prediction, ...existing.filter((p: any) => p.id !== data.prediction.id)];
+              const existing = Array.isArray(old) ? old : [];
+              return [
+                data.prediction,
+                ...existing.filter((p) => {
+                  if (!p || typeof p !== "object") return true;
+                  return (p as { id?: unknown }).id !== data.prediction.id;
+                }),
+              ];
             });
             queryClient.setQueryData(["predictions", undefined, undefined], (old: unknown[] | undefined) => {
               if (!old) return old;
-              const existing = old as any[];
-              return [data.prediction, ...existing.filter((p: any) => p.company !== data.symbol)];
+              const existing = Array.isArray(old) ? old : [];
+              return [
+                data.prediction,
+                ...existing.filter((p) => {
+                  if (!p || typeof p !== "object") return true;
+                  return (p as { company?: unknown }).company !== data.symbol;
+                }),
+              ];
             });
           }
         }
@@ -89,7 +100,15 @@ export function useSSE() {
       try {
         const data = JSON.parse(e.data);
         queryClient.setQueryData<unknown[]>(["signalDigests"], (old) =>
-          old ? [...old.filter((d: any) => d.symbol !== data.symbol), data] : [data]
+          old
+            ? [
+                ...old.filter((d) => {
+                  if (!d || typeof d !== "object") return true;
+                  return (d as { symbol?: unknown }).symbol !== data.symbol;
+                }),
+                data,
+              ]
+            : [data]
         );
       } catch { /* ignore */ }
     });
@@ -131,6 +150,10 @@ export function useSSE() {
       } catch { /* ignore */ }
     });
   }, [queryClient]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     connect();

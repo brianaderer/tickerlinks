@@ -1,4 +1,5 @@
 from flask import jsonify, request
+from datetime import datetime, timezone, timedelta
 
 from app.api import bp
 from app.extensions import db
@@ -9,11 +10,80 @@ from app.models import (
 )
 from app.articles.processor import search_articles, get_sentiment_index
 from app.articles.indices import all_indices
+from app.tasks.runtime import get_heartbeat
+
+
+REPORT_MIN_GAP_MINUTES = 40
+
+
+def _collapse_reports_by_time_gap(reports, min_gap_minutes: int = REPORT_MIN_GAP_MINUTES):
+    if min_gap_minutes <= 0:
+        return list(reports)
+
+    threshold = timedelta(minutes=min_gap_minutes)
+    collapsed = []
+    last_kept_at = None
+
+    for report in reports:
+        ts = report.generated_at
+        if ts is None:
+            continue
+        if last_kept_at is None or (last_kept_at - ts) >= threshold:
+            collapsed.append(report)
+            last_kept_at = ts
+
+    return collapsed
 
 
 @bp.route("/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+@bp.route("/scheduler/health")
+def scheduler_health():
+    now = datetime.now(timezone.utc)
+    thresholds = {
+        "analysis": 45 * 60,
+        "trends": 45 * 60,
+        "report": 45 * 60,
+    }
+
+    status = {}
+    for name, threshold in thresholds.items():
+        try:
+            raw = get_heartbeat(name)
+        except Exception:
+            raw = None
+        ts = None
+        age_seconds = None
+        stale = True
+        if raw:
+            try:
+                ts = datetime.fromisoformat(raw)
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                age_seconds = int((now - ts).total_seconds())
+                stale = age_seconds > threshold
+            except ValueError:
+                stale = True
+        status[name] = {
+            "last_success": ts.isoformat() if ts else None,
+            "age_seconds": age_seconds,
+            "stale": stale,
+            "threshold_seconds": threshold,
+        }
+
+    latest_report = Report.query.order_by(Report.generated_at.desc()).first()
+    latest_trends = TrendSnapshot.query.order_by(TrendSnapshot.generated_at.desc()).first()
+
+    status["db"] = {
+        "latest_report_at": latest_report.generated_at.isoformat() if latest_report else None,
+        "latest_trends_at": latest_trends.generated_at.isoformat() if latest_trends else None,
+    }
+
+    ok = all(not status[name]["stale"] for name in thresholds)
+    return jsonify({"ok": ok, "services": status})
 
 
 @bp.route("/indexes")
@@ -234,12 +304,28 @@ def list_signal_matches():
     company_filter = request.args.get("company")
     signal_type = request.args.get("type")
 
-    query = SignalMatch.query.order_by(SignalMatch.source_at.desc().nullslast(), SignalMatch.detected_at.desc())
+    from sqlalchemy import func
+    latest_subq = (
+        db.session.query(
+            func.max(SignalMatch.id).label("max_id"),
+        )
+        .group_by(
+            SignalMatch.company_id,
+            SignalMatch.signal_id,
+            SignalMatch.direction,
+            func.coalesce(SignalMatch.source_at, SignalMatch.detected_at),
+        )
+        .subquery()
+    )
+
+    query = SignalMatch.query.join(
+        latest_subq, SignalMatch.id == latest_subq.c.max_id
+    ).order_by(SignalMatch.source_at.desc().nullslast(), SignalMatch.detected_at.desc())
     if company_filter:
         company = Company.query.filter_by(
             symbol=company_filter.upper()
         ).first_or_404()
-        query = query.filter_by(company_id=company.id)
+        query = query.filter(SignalMatch.company_id == company.id)
     if signal_type:
         query = query.join(Signal).filter(Signal.signal_type == signal_type)
 
@@ -469,7 +555,8 @@ def get_trends():
 @bp.route("/reports")
 def list_reports():
     limit = request.args.get("limit", 20, type=int)
-    reports = Report.query.order_by(Report.generated_at.desc()).limit(limit).all()
+    reports = Report.query.order_by(Report.generated_at.desc()).all()
+    reports = _collapse_reports_by_time_gap(reports)[:limit]
     return jsonify([
         {
             "id": r.id,

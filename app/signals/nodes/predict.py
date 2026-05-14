@@ -1,6 +1,5 @@
 import logging
 import os
-import re
 from datetime import datetime, timezone
 
 from langchain_openai import ChatOpenAI
@@ -9,7 +8,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 import redis
 
 from app.signals.state import EngineState
-from app.signals.llm_utils import parse_llm_json
+from app.signals.llm_utils import parse_llm_json, sanitize_reasoning_text, strip_llm_artifacts
 from app.signals.research import research_company
 
 logger = logging.getLogger(__name__)
@@ -46,6 +45,8 @@ Each signal includes a "source" timestamp indicating when the underlying conditi
 - Source 6h-48h ago = developing situation, normal weight
 - Source > 48h ago = may already be priced in, reduce weight
 Use this to distinguish fresh catalysts from stale conditions.
+
+If you mention insider buying/selling as a driver, it must be grounded in an explicit insider signal present in the SIGNALS section (e.g., Insider Cluster Buy/Sell). Do not claim insider pressure based only on raw filing context.
 
 Do NOT wrap your response in markdown code fences. Return raw JSON only."""
 
@@ -129,7 +130,7 @@ def _format_price(company_id: int, state: EngineState) -> str:
     return "\n".join(lines)
 
 
-def _format_fundamentals(company_id: int, state: EngineState) -> str:
+def _format_fundamentals(company_id: int, state: EngineState, include_insider_context: bool) -> str:
     fund_info = state.get("fundamentals_data", {}).get(company_id)
     if not fund_info:
         return "No fundamentals data available."
@@ -147,7 +148,7 @@ def _format_fundamentals(company_id: int, state: EngineState) -> str:
             lines.append(f"52w low: ${latest['fifty_two_week_low']:.2f}")
 
     insider_trades = fund_info.get("insider_trades", [])
-    if insider_trades:
+    if include_insider_context and insider_trades:
         buys = [t for t in insider_trades if t.get("transaction_type") == "Purchase" and t.get("shares", 0) > 0]
         sells = [t for t in insider_trades if t.get("transaction_type") == "Sale" and t.get("shares", 0) > 0]
         lines.append(f"Insider activity (last {len(insider_trades)} filings): {len(buys)} purchases, {len(sells)} sales")
@@ -159,14 +160,30 @@ def _format_fundamentals(company_id: int, state: EngineState) -> str:
             price = f" @ ${t['price_per_share']:.2f}" if t.get("price_per_share") else ""
             date = t.get("date", "?")
             lines.append(f"  - {name}{title}: {ttype} {shares:,.0f} shares{price} on {date}")
-    else:
+    elif include_insider_context:
         lines.append("No insider trading activity on file.")
+    else:
+        lines.append("Insider filing context omitted (no insider-cluster signal in current match set).")
 
     return "\n".join(lines) if lines else "No fundamentals data available."
 
 
 def _strip_think_tags(text: str) -> str:
-    return re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
+    return strip_llm_artifacts(text)
+
+
+def _is_unusable_reasoning(text: str) -> bool:
+    if not text:
+        return True
+    cleaned = text.strip()
+    lower = cleaned.lower()
+    if "<think" in lower or "</think" in lower:
+        return True
+    if cleaned.startswith("{") or cleaned.startswith("["):
+        return True
+    if '"direction"' in lower and '"confidence"' in lower:
+        return True
+    return False
 
 
 def _get_redis():
@@ -192,10 +209,13 @@ def _reuse_existing_prediction(pred: dict) -> bool:
     ).order_by(Prediction.created_at.desc()).first()
     if not existing or not existing.reasoning:
         return False
+    cleaned_reasoning = sanitize_reasoning_text(existing.reasoning)
+    if _is_unusable_reasoning(cleaned_reasoning):
+        return False
     pred["direction"] = existing.direction
     pred["confidence"] = float(existing.confidence)
     pred["magnitude"] = float(existing.magnitude) if existing.magnitude else pred["confidence"] * 0.5
-    pred["reasoning"] = existing.reasoning
+    pred["reasoning"] = cleaned_reasoning
     pred["reused"] = True
     return True
 
@@ -239,7 +259,19 @@ def predict_node(state: EngineState) -> EngineState:
         try:
             signal_context = _format_signals(pred, state)
             price_context = _format_price(pred["company_id"], state)
-            fundamentals_context = _format_fundamentals(pred["company_id"], state)
+            company_signals = [
+                s for s in state.get("signals", [])
+                if s["company_id"] == pred["company_id"]
+            ]
+            include_insider_context = any(
+                str(s.get("signal_name", "")).startswith("Insider Cluster")
+                for s in company_signals
+            )
+            fundamentals_context = _format_fundamentals(
+                pred["company_id"],
+                state,
+                include_insider_context=include_insider_context,
+            )
 
             messages = [
                 SystemMessage(content=SYSTEM_PROMPT.format(today=today)),
@@ -266,16 +298,19 @@ def predict_node(state: EngineState) -> EngineState:
             text = _strip_think_tags(response.content)
             parsed = parse_llm_json(text)
 
-            if parsed:
+            if isinstance(parsed, dict):
                 if "direction" in parsed:
                     pred["direction"] = parsed["direction"]
                 if "confidence" in parsed:
                     pred["confidence"] = max(0.0, min(1.0, float(parsed["confidence"])))
                 pred["magnitude"] = max(0.0, min(1.0, float(parsed.get("magnitude", 0.5))))
-                pred["reasoning"] = _strip_think_tags(parsed.get("reasoning", ""))
+                pred["reasoning"] = sanitize_reasoning_text(parsed.get("reasoning", ""))
             else:
-                pred["reasoning"] = _strip_think_tags(text)
+                pred["reasoning"] = sanitize_reasoning_text(text)
                 pred["magnitude"] = pred["confidence"] * 0.5
+
+            if _is_unusable_reasoning(pred.get("reasoning", "")):
+                _fallback_reasoning(pred, state)
 
             if fingerprint:
                 _store_fingerprint(r, pred["company_id"], fingerprint)

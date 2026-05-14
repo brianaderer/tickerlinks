@@ -191,7 +191,11 @@ def analyze_trends(articles: list[dict], today: str) -> list[dict]:
         logger.error("Failed to parse trend analysis output")
         return []
 
-    return parsed.get("trends", [])
+    if isinstance(parsed, dict):
+        return parsed.get("trends", [])
+    if isinstance(parsed, list):
+        return parsed
+    return []
 
 
 def synthesize_trends(candidates: list[dict], articles: list[dict], today: str) -> list[dict]:
@@ -335,7 +339,7 @@ def _dedup_trends(candidates: list[dict], articles: list[dict], today: str) -> l
     response = llm.invoke(messages)
     text = _strip_think(response.content)
     parsed = parse_llm_json(text)
-    if parsed and parsed.get("trends"):
+    if isinstance(parsed, dict) and parsed.get("trends"):
         return parsed["trends"]
 
     return candidates

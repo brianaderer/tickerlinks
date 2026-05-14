@@ -45,7 +45,11 @@ def celery_init_app(app):
         },
         "generate-report": {
             "task": "app.tasks.report.generate_report",
-            "schedule": 3600.0,  # every hour
+            "schedule": 900.0,  # every 15 minutes
+        },
+        "generate-trends": {
+            "task": "app.tasks.trends.generate_trends",
+            "schedule": 900.0,  # every 15 minutes
         },
         "check-backtest-windows": {
             "task": "app.tasks.backtest.check_backtest_windows",

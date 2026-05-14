@@ -127,7 +127,7 @@ def plan_query_node(state: ResearchState) -> ResearchState:
     ])
 
     result = parse_llm_json(response.content)
-    if result:
+    if isinstance(result, dict):
         state["queries"] = result.get("queries", [f"{state['symbol']} recent news"])
         state["days_back"] = result.get("days_back", 7)
     else:
@@ -189,7 +189,7 @@ def evaluate_node(state: ResearchState) -> ResearchState:
     ])
 
     result = parse_llm_json(response.content)
-    if result and not result.get("sufficient", True):
+    if isinstance(result, dict) and not result.get("sufficient", True):
         new_queries = result.get("new_queries", [])
         if new_queries:
             state["queries"] = new_queries

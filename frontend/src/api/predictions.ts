@@ -14,6 +14,7 @@ export function usePredictions(company?: string, direction?: string) {
       return apiFetch<Prediction[]>(`/predictions${qs ? `?${qs}` : ""}`);
     },
     staleTime: 5 * 60 * 1000,
+    refetchOnMount: "always",
     refetchOnWindowFocus: false,
   });
 }
@@ -29,7 +30,7 @@ export function useRunPrediction(symbol: string) {
       return res.json();
     },
     onSuccess: () => {
-      addPending(symbol);
+      addPending(symbol, Date.now());
       setTimeout(() => {
         if (useAppStore.getState().pendingPredictions.has(symbol)) {
           removePending(symbol);

@@ -79,7 +79,7 @@ class SentimentDetector(SignalDetector):
         ])
 
         result = parse_llm_json(response.content)
-        if not result:
+        if not isinstance(result, dict):
             logger.warning("Failed to parse LLM response for %s: %s", symbol, response.content[:200])
             return None
 

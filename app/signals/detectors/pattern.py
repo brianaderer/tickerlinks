@@ -106,7 +106,7 @@ class PatternDetector(SignalDetector):
         ])
 
         result = parse_llm_json(response.content)
-        if not result:
+        if not isinstance(result, dict):
             logger.warning("Failed to parse pattern LLM response for %s: %s", symbol, response.content[:300])
             return None
 
