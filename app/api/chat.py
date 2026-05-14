@@ -33,6 +33,7 @@ RULES:
 - Do NOT wrap output in <think> tags or any XML
 - When answering a follow-up, BUILD on previous context — do NOT repeat your earlier answer verbatim
 - Each reply should add new insight or directly answer the new question
+- If the user uses follow-up pronouns like "them/those/these", resolve them to the most recent ticker set in context instead of substituting a new list
 - Mention directional accuracy at most once per conversation unless the user explicitly asks about model accuracy/statistics
 - Any response that includes TickerBets information MUST include this disclaimer verbatim:
   Tickerbets provides experimental, model-based price estimates derived from historical data patterns. These outputs are not financial advice, investment recommendations, or guarantees of future performance, and should not be the sole basis for trading decisions."""
@@ -49,6 +50,22 @@ RANK_RE = re.compile(
 )
 ACCURACY_STATS_RE = re.compile(
     r"\b(accuracy|r\^?2|r2|rmse|mae|statistics?|confidence of model)\b",
+    re.IGNORECASE,
+)
+FOLLOWUP_REF_RE = re.compile(
+    r"\b("
+    r"them|those|these|that list|the list|same stocks|same tickers|"
+    r"you mentioned|mentioned earlier|mentioned first|earlier ones|first ones"
+    r")\b",
+    re.IGNORECASE,
+)
+PREDICTION_FOLLOWUP_RE = re.compile(
+    r"\b(price|prices|prediction|predictions|estimate|estimates|target|targets)\b",
+    re.IGNORECASE,
+)
+TICKER_LINE_RE = re.compile(r"^\s*(?:[-*]|\d+\.)?\s*([A-Z]{1,5})\s*[-:]", re.MULTILINE)
+SECTOR_OUTLOOK_RE = re.compile(
+    r"\b(sector|industry)\b.*\b(outlook|view|setup|looking)\b|\b(outlook|view|setup)\b.*\b(sector|industry)\b",
     re.IGNORECASE,
 )
 
@@ -68,6 +85,47 @@ def _directional_accuracy_already_mentioned(history: list[dict]) -> bool:
         if re.search(r"directional\s+accuracy", msg.get("content", ""), re.IGNORECASE):
             return True
     return False
+
+
+def _needs_followup_ticker_resolution(user_text: str) -> bool:
+    text = user_text or ""
+    return bool(FOLLOWUP_REF_RE.search(text))
+
+
+def _extract_recent_assistant_tickers(history: list[dict]) -> list[str]:
+    from app.models import Company
+
+    for msg in reversed(history):
+        if msg.get("role") != "assistant":
+            continue
+        content = msg.get("content", "") or ""
+        line_symbols = TICKER_LINE_RE.findall(content)
+        if not line_symbols:
+            continue
+        ordered_unique = []
+        seen = set()
+        for sym in line_symbols:
+            if sym in seen:
+                continue
+            seen.add(sym)
+            ordered_unique.append(sym)
+        if not ordered_unique:
+            continue
+
+        known_rows = (
+            Company.query.with_entities(Company.symbol)
+            .filter(Company.active.is_(True), Company.symbol.in_(ordered_unique))
+            .all()
+        )
+        known = {row[0] for row in known_rows}
+        filtered = [sym for sym in ordered_unique if sym in known]
+        if filtered:
+            return filtered[:10]
+    return []
+
+
+def _needs_sector_outlook_grounding(user_text: str) -> bool:
+    return bool(SECTOR_OUTLOOK_RE.search(user_text or ""))
 
 
 @bp.route("/chat", methods=["POST"])
@@ -112,6 +170,28 @@ def chat():
             lc_messages.append(AIMessage(content=content))
 
     latest_user_message = next((m.get("content", "") for m in reversed(history) if m.get("role") == "user"), "")
+    if _needs_followup_ticker_resolution(latest_user_message):
+        prior_tickers = _extract_recent_assistant_tickers(history)
+        if prior_tickers:
+            lc_messages.append(SystemMessage(
+                content=(
+                    "For this specific follow-up, pronouns like 'them/those/these' refer to this exact ticker set: "
+                    f"{', '.join(prior_tickers)}. Keep the same set unless the user explicitly asks to change it."
+                )
+            ))
+            lc_messages.append(SystemMessage(
+                content=(
+                    "If the user asks for price predictions/estimates for that set, call ticker_bets for those same "
+                    "tickers and summarize results for each one."
+                )
+            ))
+    if _needs_sector_outlook_grounding(latest_user_message):
+        lc_messages.append(SystemMessage(
+            content=(
+                "For sector/industry outlook questions, ground the answer with tools (get_trends, get_market_brief, "
+                "or screen_stocks) before concluding. Do not invent ticker-level prediction numbers."
+            )
+        ))
     if _needs_tickerbets_ranking(latest_user_message):
         lc_messages.append(SystemMessage(
             content=(
@@ -137,9 +217,27 @@ def chat():
     try:
         tool_map = {t.name: t for t in LINKY_TOOLS}
         tool_calls_made = 0
+        must_ground_followup = _needs_followup_ticker_resolution(latest_user_message)
+        forced_grounding_retry = False
 
         for _ in range(MAX_TOOL_CALLS + 1):
             response = llm_with_tools.invoke(lc_messages)
+
+            if (
+                must_ground_followup
+                and not response.tool_calls
+                and tool_calls_made == 0
+                and not forced_grounding_retry
+            ):
+                forced_grounding_retry = True
+                lc_messages.append(response)
+                lc_messages.append(SystemMessage(
+                    content=(
+                        "You must call ticker_bets for the referenced ticker set before answering. "
+                        "Do not provide any predicted numbers without tool output."
+                    )
+                ))
+                continue
 
             if not response.tool_calls or tool_calls_made >= MAX_TOOL_CALLS:
                 break
@@ -165,7 +263,11 @@ def chat():
                 logger.info("Linky tool call: %s(%s)", tool_name, tc["args"])
                 sse_publish("chat", "tool_call", {"tool": tool_name, "args": tc["args"]})
 
-                result = tool_fn.invoke(tc["args"])
+                try:
+                    result = tool_fn.invoke(tc["args"])
+                except Exception as tool_exc:
+                    logger.exception("Linky tool failed: %s", tool_name)
+                    result = f"Tool {tool_name} failed: {tool_exc}"
                 lc_messages.append(ToolMessage(content=result, tool_call_id=tc["id"]))
                 tool_calls_made += 1
 

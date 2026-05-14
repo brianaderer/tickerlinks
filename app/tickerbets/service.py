@@ -150,10 +150,7 @@ def generate_bet_prediction(symbol: str, target_date: str | date | datetime, run
 
     requested_date = _parse_target_date(target_date)
     as_of = normalize_as_of()
-    horizon = _horizon_days_from_requested(requested_date, as_of.date())
-    if horizon < MIN_HORIZON_DAYS or horizon > MAX_HORIZON_DAYS:
-        raise ValueError(f"target_date must be between {MIN_HORIZON_DAYS} and {MAX_HORIZON_DAYS} days in the future")
-    resolved_date = _normalize_target_date(requested_date)
+    horizon, resolved_date = _resolve_horizon_for_target_date(requested_date, as_of.date())
 
     model_key = (run.model_keys or {}).get(str(horizon))
     encoded_cols = (run.feature_columns or {}).get(str(horizon))
@@ -226,8 +223,19 @@ def _normalize_target_date(raw: date) -> date:
     return d
 
 
-def _horizon_days_from_requested(requested_date: date, as_of_date: date) -> int:
-    return (requested_date - as_of_date).days
+def _resolve_horizon_for_target_date(requested_date: date, as_of_date: date) -> tuple[int, date]:
+    resolved_date = _normalize_target_date(requested_date)
+    valid_dates = available_target_dates(
+        as_of=as_of_date,
+        min_days_ahead=MIN_HORIZON_DAYS,
+        max_days_ahead=MAX_HORIZON_DAYS,
+    )
+    if resolved_date not in valid_dates:
+        raise ValueError(
+            f"target_date must be between {MIN_HORIZON_DAYS} and {MAX_HORIZON_DAYS} trading days in the future"
+        )
+    horizon = valid_dates.index(resolved_date) + MIN_HORIZON_DAYS
+    return horizon, resolved_date
 
 
 def available_target_dates(
@@ -241,12 +249,13 @@ def available_target_dates(
     if max_days < min_days:
         return []
 
-    dates = []
-    for offset in range(min_days, max_days + 1):
-        day = as_of_date + timedelta(days=offset)
-        if _is_trading_day(day):
-            dates.append(day)
-    return dates
+    trading_days: list[date] = []
+    cursor = as_of_date
+    while len(trading_days) < max_days:
+        cursor += timedelta(days=1)
+        if _is_trading_day(cursor):
+            trading_days.append(cursor)
+    return trading_days[min_days - 1:max_days]
 
 
 def _is_trading_day(d: date) -> bool:

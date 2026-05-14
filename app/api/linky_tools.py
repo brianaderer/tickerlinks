@@ -195,6 +195,12 @@ def _resolve_tickerbets_target_date(target_date: str, horizon_days: int) -> str:
     except (TypeError, ValueError):
         days = 1
     days = max(1, min(days, 10))
+    from app.tickerbets.service import available_target_dates
+
+    dates = available_target_dates(min_days_ahead=1, max_days_ahead=10)
+    if dates:
+        idx = min(days - 1, len(dates) - 1)
+        return dates[idx].isoformat()
     return (datetime.now(timezone.utc).date() + timedelta(days=days)).isoformat()
 
 

@@ -1,19 +1,47 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useCompanies } from "../api/companies";
 import { useGenerateTickerbet, useLatestTickerbetRun, useTickerbetRuns, useTickerbetTargetDates } from "../api/tickerbets";
-import { HiOutlineChevronDown } from "react-icons/hi2";
+import { HiOutlineCalendarDays, HiOutlineChevronDown } from "react-icons/hi2";
 import type { Company } from "../types";
 
 function formatIsoDate(raw: string) {
   return (raw || "").split("T")[0];
 }
 
-function formatTargetDateOption(raw: string) {
-  const [y, m, d] = raw.split("-").map(Number);
-  const utcDate = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
-  const weekday = utcDate.toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
-  return `${raw} (${weekday})`;
+function toIsoLocalDate(d: Date) {
+  const y = d.getFullYear();
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function monthKey(d: Date) {
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}`;
+}
+
+function monthFromKey(key: string) {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, 1);
+}
+
+function monthOrdinal(key: string) {
+  const [y, m] = key.split("-").map(Number);
+  return y * 12 + (m - 1);
+}
+
+function buildMonthGrid(key: string) {
+  const firstOfMonth = monthFromKey(key);
+  const firstGridDay = new Date(firstOfMonth);
+  firstGridDay.setDate(1 - firstOfMonth.getDay());
+
+  const days: Date[] = [];
+  for (let i = 0; i < 42; i += 1) {
+    const d = new Date(firstGridDay);
+    d.setDate(firstGridDay.getDate() + i);
+    days.push(d);
+  }
+  return days;
 }
 
 type RankedCompany = {
@@ -98,11 +126,15 @@ export default function Tickerbets() {
   const { data: recentRuns } = useTickerbetRuns(10);
   const generateMutation = useGenerateTickerbet();
   const symbolInputRef = useRef<HTMLInputElement>(null);
+  const calendarRef = useRef<HTMLDivElement>(null);
 
   const [symbolInput, setSymbolInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [targetDate, setTargetDate] = useState("");
-  const targetDates = targetDateOptions?.dates || [];
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState<string | null>(null);
+  const targetDates = useMemo(() => targetDateOptions?.dates ?? [], [targetDateOptions]);
+  const targetDateSet = useMemo(() => new Set(targetDates), [targetDates]);
   const rankedCompanies = useMemo(
     () => (companies ? rankCompanies(symbolInput, companies).slice(0, 10) : []),
     [companies, symbolInput],
@@ -117,8 +149,45 @@ export default function Tickerbets() {
   const isKnownSymbol = Boolean(resolvedCompany);
   const hasTypedInput = symbolInput.trim().length > 0;
   const effectiveTargetDate = targetDates.includes(targetDate) ? targetDate : (targetDates[0] || "");
+  const minMonthKey = targetDates[0]?.slice(0, 7) || "";
+  const maxMonthKey = targetDates[targetDates.length - 1]?.slice(0, 7) || "";
+  const effectiveCalendarMonth = calendarMonth || effectiveTargetDate.slice(0, 7) || minMonthKey;
+  const calendarDays = useMemo(
+    () => (effectiveCalendarMonth ? buildMonthGrid(effectiveCalendarMonth) : []),
+    [effectiveCalendarMonth],
+  );
+  const canGoPrevMonth = Boolean(effectiveCalendarMonth && minMonthKey && monthOrdinal(effectiveCalendarMonth) > monthOrdinal(minMonthKey));
+  const canGoNextMonth = Boolean(effectiveCalendarMonth && maxMonthKey && monthOrdinal(effectiveCalendarMonth) < monthOrdinal(maxMonthKey));
 
   const horizonMetrics = latestRun?.metrics ? Object.entries(latestRun.metrics).sort((a, b) => Number(a[0]) - Number(b[0])) : [];
+
+  useEffect(() => {
+    if (!calendarOpen) return;
+    const onMouseDown = (event: MouseEvent) => {
+      if (!calendarRef.current) return;
+      if (!calendarRef.current.contains(event.target as Node)) {
+        setCalendarOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [calendarOpen]);
+
+  const openCalendar = () => {
+    if (!targetDates.length) return;
+    setCalendarMonth(effectiveCalendarMonth);
+    setCalendarOpen(true);
+  };
+
+  const shiftCalendarMonth = (delta: number) => {
+    if (!effectiveCalendarMonth) return;
+    const d = monthFromKey(effectiveCalendarMonth);
+    d.setMonth(d.getMonth() + delta);
+    const next = monthKey(d);
+    if (minMonthKey && monthOrdinal(next) < monthOrdinal(minMonthKey)) return;
+    if (maxMonthKey && monthOrdinal(next) > monthOrdinal(maxMonthKey)) return;
+    setCalendarMonth(next);
+  };
 
   return (
     <div className="space-y-8">
@@ -145,7 +214,7 @@ export default function Tickerbets() {
                     onFocus={() => setShowSuggestions(true)}
                     onBlur={() => setTimeout(() => setShowSuggestions(false), 120)}
                     placeholder={defaultCompany ? `${defaultCompany.symbol} or company name` : "Type ticker or company name"}
-                    className="w-full border border-stone-300 rounded px-2 pr-8 py-1.5 text-sm"
+                    className="w-full h-[38px] border border-stone-300 rounded px-2 pr-8 text-sm"
                   />
                   <button
                     type="button"
@@ -190,33 +259,98 @@ export default function Tickerbets() {
 
               <label className="text-xs text-stone-500 font-sans space-y-1">
                 <span>Target date</span>
-                <select
-                  value={effectiveTargetDate}
-                  onChange={(e) => setTargetDate(e.target.value)}
-                  className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm"
-                >
-                  {targetDates.length === 0 ? (
-                    <option value="">No trading dates available</option>
-                  ) : (
-                    targetDates.map((d) => (
-                      <option key={d} value={d}>
-                        {formatTargetDateOption(d)}
-                      </option>
-                    ))
+                <div className="relative" ref={calendarRef}>
+                  <button
+                    type="button"
+                    onClick={openCalendar}
+                    disabled={!targetDates.length}
+                    className="w-full h-[38px] border border-stone-300 rounded px-2 py-1.5 text-sm text-left flex items-center justify-between disabled:opacity-60"
+                  >
+                    <span>{effectiveTargetDate || "Select trading date"}</span>
+                    <HiOutlineCalendarDays className="w-4 h-4 text-stone-500" />
+                  </button>
+
+                  {calendarOpen && effectiveCalendarMonth && (
+                    <div className="absolute z-30 mt-1 w-72 rounded border border-stone-300 bg-white p-2 shadow-md">
+                      <div className="mb-2 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => shiftCalendarMonth(-1)}
+                          disabled={!canGoPrevMonth}
+                          className="px-2 py-1 text-sm text-stone-600 disabled:opacity-30"
+                        >
+                          ‹
+                        </button>
+                        <p className="text-sm font-semibold text-stone-800">
+                          {monthFromKey(effectiveCalendarMonth).toLocaleDateString(undefined, {
+                            month: "long",
+                            year: "numeric",
+                          })}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => shiftCalendarMonth(1)}
+                          disabled={!canGoNextMonth}
+                          className="px-2 py-1 text-sm text-stone-600 disabled:opacity-30"
+                        >
+                          ›
+                        </button>
+                      </div>
+
+                      <div className="mb-1 grid grid-cols-7 text-center text-[11px] text-stone-500">
+                        {["S", "M", "T", "W", "T", "F", "S"].map((d) => (
+                          <span key={d} className="py-1">{d}</span>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-7 gap-0.5">
+                        {calendarDays.map((day) => {
+                          const iso = toIsoLocalDate(day);
+                          const inMonth = monthKey(day) === effectiveCalendarMonth;
+                          const selectable = targetDateSet.has(iso);
+                          const selected = iso === effectiveTargetDate;
+                          return (
+                            <button
+                              key={iso}
+                              type="button"
+                              disabled={!selectable}
+                              onClick={() => {
+                                setTargetDate(iso);
+                                setCalendarOpen(false);
+                              }}
+                              className={[
+                                "h-8 rounded text-xs",
+                                selected
+                                  ? "bg-stone-900 text-stone-50"
+                                  : selectable
+                                    ? "text-stone-800 hover:bg-stone-100"
+                                    : "text-stone-300 cursor-not-allowed",
+                                inMonth ? "" : "opacity-50",
+                              ].join(" ")}
+                            >
+                              {day.getDate()}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
-                </select>
+                </div>
               </label>
 
-              <div className="flex items-end">
+              <div className="text-xs text-stone-500 font-sans space-y-1">
+                <span className="invisible">Action</span>
                 <button
                   onClick={() => generateMutation.mutate({ symbol: effectiveSymbol, target_date: effectiveTargetDate })}
                   disabled={!effectiveSymbol || !effectiveTargetDate || generateMutation.isPending || !isKnownSymbol}
-                  className="w-full px-3 py-1.5 text-sm rounded bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-50"
+                  className="w-full h-[38px] px-3 text-sm rounded bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-50"
                 >
                   {generateMutation.isPending ? "Generating..." : "Generate Bet"}
                 </button>
               </div>
             </div>
+            <p className="text-[11px] text-stone-500">
+              Trading-day horizon only (next {targetDates.length} market dates).
+            </p>
             {generateMutation.isError && (
               <p className="text-sm text-red-600">{(generateMutation.error as Error).message}</p>
             )}
