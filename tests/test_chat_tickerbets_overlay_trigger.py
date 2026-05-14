@@ -1,5 +1,6 @@
 from app.api.chat import (
     _directional_accuracy_already_mentioned,
+    _needs_direct_tickerbets_grounding,
     _needs_followup_ticker_resolution,
     _needs_sector_outlook_grounding,
     _needs_tickerbets_overlay,
@@ -47,3 +48,13 @@ def test_followup_resolution_detects_you_mentioned_first_phrase():
 
 def test_sector_outlook_grounding_trigger_detects_sector_question():
     assert _needs_sector_outlook_grounding("what is the tech sector outlook") is True
+
+
+def test_overlay_trigger_detects_assessment_language():
+    text = "What factors influence the decision when assessing the TickerBets forecast for IBM?"
+    assert _needs_tickerbets_overlay(text) is True
+
+
+def test_direct_tickerbets_grounding_detects_symbol_queries(monkeypatch):
+    monkeypatch.setattr("app.api.chat._extract_symbols_from_text", lambda _text: ["MPWR"])
+    assert _needs_direct_tickerbets_grounding("what is the tickerbets 10 days for mpwr") is True
