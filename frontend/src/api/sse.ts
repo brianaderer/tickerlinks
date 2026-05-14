@@ -141,6 +141,12 @@ export function useSSE() {
       queryClient.invalidateQueries({ queryKey: ["articlesBatch"] });
     });
 
+    es.addEventListener("tickerbets:train_complete", () => {
+      if (!ready.current) return;
+      queryClient.invalidateQueries({ queryKey: ["tickerbets", "runs"] });
+      queryClient.invalidateQueries({ queryKey: ["tickerbets", "latest"] });
+    });
+
     es.addEventListener("chat:tool_call", (e: MessageEvent) => {
       trackId(e);
       if (!ready.current) return;

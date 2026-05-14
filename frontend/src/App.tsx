@@ -14,6 +14,7 @@ import Articles from "./pages/Articles";
 import ArticleReader from "./pages/ArticleReader";
 import TrendDetail from "./pages/TrendDetail";
 import Reports from "./pages/Reports";
+import Tickerbets from "./pages/Tickerbets";
 
 const rootRoute = createRootRoute({ component: Layout });
 
@@ -71,6 +72,12 @@ const reportsRoute = createRoute({
   component: Reports,
 });
 
+const tickerbetsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tickerbets",
+  component: Tickerbets,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   companiesRoute,
@@ -81,6 +88,7 @@ const routeTree = rootRoute.addChildren([
   articleReaderRoute,
   trendDetailRoute,
   reportsRoute,
+  tickerbetsRoute,
 ]);
 
 const router = createRouter({

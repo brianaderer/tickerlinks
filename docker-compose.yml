@@ -25,6 +25,23 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    ports:
+      - "9410:9000"
+      - "9411:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build: .
     command: flask run --host=0.0.0.0 --port=5000
@@ -41,6 +58,12 @@ services:
       TYPESENSE_HOST: typesense
       TYPESENSE_PORT: "8108"
       TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:-stocklynx-typesense-key}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-tickerbets-artifacts}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_SECURE: ${S3_SECURE:-false}
     ports:
       - "5001:5000"
     volumes:
@@ -51,6 +74,8 @@ services:
       redis:
         condition: service_healthy
       typesense:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
   celery-worker:
@@ -68,12 +93,20 @@ services:
       TYPESENSE_HOST: typesense
       TYPESENSE_PORT: "8108"
       TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:-stocklynx-typesense-key}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-tickerbets-artifacts}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_SECURE: ${S3_SECURE:-false}
     volumes:
       - .:/app
     depends_on:
       api:
         condition: service_started
       typesense:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
   celery-backfill:
@@ -91,12 +124,20 @@ services:
       TYPESENSE_HOST: typesense
       TYPESENSE_PORT: "8108"
       TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:-stocklynx-typesense-key}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-tickerbets-artifacts}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_SECURE: ${S3_SECURE:-false}
     volumes:
       - .:/app
     depends_on:
       api:
         condition: service_started
       typesense:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
   celery-user:
@@ -113,12 +154,20 @@ services:
       TYPESENSE_HOST: typesense
       TYPESENSE_PORT: "8108"
       TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:-stocklynx-typesense-key}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-tickerbets-artifacts}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_SECURE: ${S3_SECURE:-false}
     volumes:
       - .:/app
     depends_on:
       api:
         condition: service_started
       typesense:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
   celery-beat:
@@ -129,11 +178,19 @@ services:
       DATABASE_URL: postgresql://stocklynx:stocklynx@db:5432/stocklynx
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_BUCKET: ${S3_BUCKET:-tickerbets-artifacts}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_SECURE: ${S3_SECURE:-false}
     volumes:
       - .:/app
     depends_on:
       api:
         condition: service_started
+      minio:
+        condition: service_healthy
 
   typesense:
     image: typesense/typesense:27.1
@@ -153,3 +210,4 @@ services:
 volumes:
   pgdata:
   typesensedata:
+  miniodata:

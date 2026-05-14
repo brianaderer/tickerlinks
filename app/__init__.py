@@ -30,6 +30,7 @@ def create_app(config_class=Config):
         clean_articles_command,
         replay_history_command,
         repair_pipeline_data_command,
+        generate_bet_command,
     )
     app.cli.add_command(seed_command)
     app.cli.add_command(process_backlog_command)
@@ -37,5 +38,6 @@ def create_app(config_class=Config):
     app.cli.add_command(clean_articles_command)
     app.cli.add_command(replay_history_command)
     app.cli.add_command(repair_pipeline_data_command)
+    app.cli.add_command(generate_bet_command)
 
     return app

@@ -232,3 +232,20 @@ def repair_pipeline_data_command(queue):
     clean_task = clean_prediction_reasoning.apply_async(queue=queue)
     click.echo(f"Dedupe queued: {dedupe_task.id}")
     click.echo(f"Prediction cleanup queued: {clean_task.id}")
+
+
+@click.command("generate-bet")
+@click.option("--sync", is_flag=True, default=False, help="Run training synchronously in this process")
+@click.option("--queue", default="backfill", show_default=True, help="Queue name for async training")
+@with_appcontext
+def generate_bet_command(sync, queue):
+    """Train nightly Tickerbets models manually."""
+    from app.tasks.tickerbets import train_tickerbets, train_tickerbets_sync
+
+    if sync:
+        result = train_tickerbets_sync()
+        click.echo(f"Tickerbets training complete: {result}")
+        return
+
+    task = train_tickerbets.apply_async(queue=queue)
+    click.echo(f"Tickerbets training queued on '{queue}': {task.id}")
