@@ -147,3 +147,45 @@ export interface Report {
   summary: string;
   data?: Record<string, unknown>;
 }
+
+export interface TickerbetModelRun {
+  id: number;
+  run_id: string;
+  status: "running" | "succeeded" | "failed";
+  model_family: string;
+  started_at: string | null;
+  completed_at: string | null;
+  training_window_start: string | null;
+  training_window_end: string | null;
+  company_count: number;
+  sample_count: number;
+  train_count: number;
+  test_count: number;
+  feature_columns: Record<string, string[]>;
+  metrics: Record<string, Record<string, number>>;
+  artifact_prefix: string | null;
+  dataset_key: string | null;
+  model_keys: Record<string, string>;
+  metadata_key: string | null;
+  error: string | null;
+}
+
+export interface TickerbetPrediction {
+  symbol: string;
+  requested_target_date: string;
+  resolved_target_date: string;
+  horizon_days: number;
+  as_of: string;
+  current_price: number;
+  predicted_price: number;
+  predicted_delta: number;
+  predicted_delta_pct: number;
+  run_id: string;
+  metrics: Record<string, number>;
+}
+
+export interface TickerbetTargetDates {
+  dates: string[];
+  min_days_ahead: number;
+  max_days_ahead: number;
+}

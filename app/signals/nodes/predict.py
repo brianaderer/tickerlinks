@@ -212,6 +212,8 @@ def _reuse_existing_prediction(pred: dict) -> bool:
     cleaned_reasoning = sanitize_reasoning_text(existing.reasoning)
     if _is_unusable_reasoning(cleaned_reasoning):
         return False
+    if _looks_like_fallback_reasoning(cleaned_reasoning):
+        return False
     pred["direction"] = existing.direction
     pred["confidence"] = float(existing.confidence)
     pred["magnitude"] = float(existing.magnitude) if existing.magnitude else pred["confidence"] * 0.5
@@ -327,6 +329,53 @@ def predict_node(state: EngineState) -> EngineState:
 def _fallback_reasoning(pred: dict, state: EngineState):
     signals = state.get("signals", [])
     company_signals = [s for s in signals if s["company_id"] == pred["company_id"]]
-    signal_summary = ", ".join(s["signal_name"] for s in company_signals)
-    pred["reasoning"] = f"{pred['direction'].title()} outlook based on {len(company_signals)} signals: {signal_summary}."
+
+    def _effective_direction(sig: dict) -> str:
+        if sig.get("antisignal"):
+            return "bearish" if sig.get("direction") == "bullish" else "bullish"
+        return sig.get("direction", "neutral")
+
+    bullish = 0.0
+    bearish = 0.0
+    parts = []
+    contrarian_notes = []
+    for sig in company_signals:
+        eff_dir = _effective_direction(sig)
+        conf = float(sig.get("confidence", 0.0))
+        if eff_dir == "bullish":
+            bullish += conf
+        elif eff_dir == "bearish":
+            bearish += conf
+
+        age = _format_age(sig.get("source_at", ""))
+        parts.append(f"{sig['signal_name']} ({eff_dir}, {conf:.0%}, {age})")
+        if sig.get("antisignal"):
+            contrarian_notes.append(sig["signal_name"])
+
+    signal_summary = ", ".join(parts[:6]) if parts else "no active signals"
+    reasoning_parts = [
+        (
+            f"{pred['direction'].title()} near-term setup from {len(company_signals)} active signals, "
+            f"with effective scoring leaning {pred['direction']} "
+            f"(bullish {bullish:.2f} vs bearish {bearish:.2f})."
+        ),
+        f"Primary drivers: {signal_summary}.",
+    ]
+    if contrarian_notes:
+        names = ", ".join(contrarian_notes[:3])
+        reasoning_parts.append(
+            f"Contrarian adjustment applied to {names} because their historical accuracy is below 50%."
+        )
+    pred["reasoning"] = " ".join(reasoning_parts)
     pred["magnitude"] = pred["confidence"] * 0.5
+
+
+def _looks_like_fallback_reasoning(text: str) -> bool:
+    lower = (text or "").strip().lower()
+    return (
+        lower.startswith("bullish outlook based on")
+        or lower.startswith("bearish outlook based on")
+        or "fallback outlook based on" in lower
+        or "effective bullish score" in lower
+        or "effective scoring leaning" in lower
+    )

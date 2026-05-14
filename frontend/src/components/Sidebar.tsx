@@ -5,6 +5,7 @@ import {
   HiOutlineBuildingOffice2,
   HiOutlineBolt,
   HiOutlineChartBar,
+  HiOutlinePresentationChartLine,
   HiOutlineNewspaper,
   HiOutlineDocumentText,
 } from "react-icons/hi2";
@@ -14,6 +15,7 @@ const NAV = [
   { to: "/companies", label: "Companies", icon: HiOutlineBuildingOffice2 },
   { to: "/signals", label: "Signals", icon: HiOutlineBolt },
   { to: "/predictions", label: "Predictions", icon: HiOutlineChartBar },
+  { to: "/tickerbets", label: "Tickerbets", icon: HiOutlinePresentationChartLine },
   { to: "/articles", label: "Articles", icon: HiOutlineNewspaper },
   { to: "/reports", label: "Reports", icon: HiOutlineDocumentText },
 ] as const;

@@ -14,23 +14,118 @@ logger = logging.getLogger(__name__)
 
 bp = Blueprint("chat", __name__)
 
-SYSTEM_PROMPT = """You are Linky, the AI market intelligence assistant for StockLynx. Today is {today}.
+SYSTEM_PROMPT = """You are Linky, the AI market intelligence assistant for TickerLinks. Today is {today}.
 
 The user is currently viewing: {page_context}
 
-You have tools to look up company profiles (fundamentals, signals, predictions, price action), search articles in the database, check trending topics, read the latest market brief, and review the signal accuracy rubric. Use them to give specific, data-backed answers.
+You have tools to look up company profiles (fundamentals, signals, predictions, price action), search articles in the database, check trending topics, read the latest market brief, review the signal accuracy rubric, and fetch TickerBets short-horizon model estimates. Use them to give specific, data-backed answers.
 
 RULES:
 - Be conversational but precise — cite tickers, numbers, and dates
 - Keep responses focused unless the user asks for depth
 - If the user is on a company page, you already know which ticker they're looking at
 - Use tools proactively — don't guess when you can look up real data
+- Use the ticker_bets tool with latitude when the user asks for near-term price targets/moves (1-10 days), date-specific estimates, or wants a quant check against narrative predictions
+- When users ask for "most bullish/bearish" or leaderboard-style TickerBets questions across stocks, call ticker_bets_rankings (do not infer rankings from a single-symbol tool call)
+- When the user asks if TickerBets is likely correct/right/wrong or asks to compare/overlay with other sources, call ticker_bets_overlay and provide a direct verdict (supports/mixed/conflicts) with concrete evidence
+- Do not respond with phrases like "I don't agree/disagree" when asked for an evaluation; use tools and give the requested judgment
 - Never fabricate data points — if a tool returns nothing, say so
 - Do NOT wrap output in <think> tags or any XML
 - When answering a follow-up, BUILD on previous context — do NOT repeat your earlier answer verbatim
-- Each reply should add new insight or directly answer the new question"""
+- Each reply should add new insight or directly answer the new question
+- If the user uses follow-up pronouns like "them/those/these", resolve them to the most recent ticker set in context instead of substituting a new list
+- Mention directional accuracy at most once per conversation unless the user explicitly asks about model accuracy/statistics
+- Any response that includes TickerBets information MUST include this disclaimer verbatim:
+  Tickerbets provides experimental, model-based price estimates derived from historical data patterns. These outputs are not financial advice, investment recommendations, or guarantees of future performance, and should not be the sole basis for trading decisions."""
 
 MAX_TOOL_CALLS = 5
+TICKERBETS_RE = re.compile(r"\bticker[\s-]?bets?\b", re.IGNORECASE)
+OVERLAY_RE = re.compile(
+    r"\b(agree|disagree|correct|likely|right|wrong|overlay|reconcile|compare|consistent|line\s*up|align)\b",
+    re.IGNORECASE,
+)
+RANK_RE = re.compile(
+    r"\b(most|top|best|worst|leaderboard|rank|ranking)\b",
+    re.IGNORECASE,
+)
+ACCURACY_STATS_RE = re.compile(
+    r"\b(accuracy|r\^?2|r2|rmse|mae|statistics?|confidence of model)\b",
+    re.IGNORECASE,
+)
+FOLLOWUP_REF_RE = re.compile(
+    r"\b("
+    r"them|those|these|that list|the list|same stocks|same tickers|"
+    r"you mentioned|mentioned earlier|mentioned first|earlier ones|first ones"
+    r")\b",
+    re.IGNORECASE,
+)
+PREDICTION_FOLLOWUP_RE = re.compile(
+    r"\b(price|prices|prediction|predictions|estimate|estimates|target|targets)\b",
+    re.IGNORECASE,
+)
+TICKER_LINE_RE = re.compile(r"^\s*(?:[-*]|\d+\.)?\s*([A-Z]{1,5})\s*[-:]", re.MULTILINE)
+SECTOR_OUTLOOK_RE = re.compile(
+    r"\b(sector|industry)\b.*\b(outlook|view|setup|looking)\b|\b(outlook|view|setup)\b.*\b(sector|industry)\b",
+    re.IGNORECASE,
+)
+
+
+def _needs_tickerbets_overlay(user_text: str) -> bool:
+    return bool(TICKERBETS_RE.search(user_text or "") and OVERLAY_RE.search(user_text or ""))
+
+
+def _needs_tickerbets_ranking(user_text: str) -> bool:
+    return bool(TICKERBETS_RE.search(user_text or "") and RANK_RE.search(user_text or ""))
+
+
+def _directional_accuracy_already_mentioned(history: list[dict]) -> bool:
+    for msg in history:
+        if msg.get("role") != "assistant":
+            continue
+        if re.search(r"directional\s+accuracy", msg.get("content", ""), re.IGNORECASE):
+            return True
+    return False
+
+
+def _needs_followup_ticker_resolution(user_text: str) -> bool:
+    text = user_text or ""
+    return bool(FOLLOWUP_REF_RE.search(text))
+
+
+def _extract_recent_assistant_tickers(history: list[dict]) -> list[str]:
+    from app.models import Company
+
+    for msg in reversed(history):
+        if msg.get("role") != "assistant":
+            continue
+        content = msg.get("content", "") or ""
+        line_symbols = TICKER_LINE_RE.findall(content)
+        if not line_symbols:
+            continue
+        ordered_unique = []
+        seen = set()
+        for sym in line_symbols:
+            if sym in seen:
+                continue
+            seen.add(sym)
+            ordered_unique.append(sym)
+        if not ordered_unique:
+            continue
+
+        known_rows = (
+            Company.query.with_entities(Company.symbol)
+            .filter(Company.active.is_(True), Company.symbol.in_(ordered_unique))
+            .all()
+        )
+        known = {row[0] for row in known_rows}
+        filtered = [sym for sym in ordered_unique if sym in known]
+        if filtered:
+            return filtered[:10]
+    return []
+
+
+def _needs_sector_outlook_grounding(user_text: str) -> bool:
+    return bool(SECTOR_OUTLOOK_RE.search(user_text or ""))
 
 
 @bp.route("/chat", methods=["POST"])
@@ -74,12 +169,75 @@ def chat():
                 content = content[:4000] + "\n[truncated]"
             lc_messages.append(AIMessage(content=content))
 
+    latest_user_message = next((m.get("content", "") for m in reversed(history) if m.get("role") == "user"), "")
+    if _needs_followup_ticker_resolution(latest_user_message):
+        prior_tickers = _extract_recent_assistant_tickers(history)
+        if prior_tickers:
+            lc_messages.append(SystemMessage(
+                content=(
+                    "For this specific follow-up, pronouns like 'them/those/these' refer to this exact ticker set: "
+                    f"{', '.join(prior_tickers)}. Keep the same set unless the user explicitly asks to change it."
+                )
+            ))
+            lc_messages.append(SystemMessage(
+                content=(
+                    "If the user asks for price predictions/estimates for that set, call ticker_bets for those same "
+                    "tickers and summarize results for each one."
+                )
+            ))
+    if _needs_sector_outlook_grounding(latest_user_message):
+        lc_messages.append(SystemMessage(
+            content=(
+                "For sector/industry outlook questions, ground the answer with tools (get_trends, get_market_brief, "
+                "or screen_stocks) before concluding. Do not invent ticker-level prediction numbers."
+            )
+        ))
+    if _needs_tickerbets_ranking(latest_user_message):
+        lc_messages.append(SystemMessage(
+            content=(
+                "For this specific question, call ticker_bets_rankings to produce grounded bullish/bearish results. "
+                "Do not infer cross-stock rankings from single-stock outputs."
+            )
+        ))
+    if _needs_tickerbets_overlay(latest_user_message):
+        lc_messages.append(SystemMessage(
+            content=(
+                "For this specific user question, call ticker_bets_overlay before answering. "
+                "Return a direct verdict label (supports/mixed/conflicts) backed by the tool evidence."
+            )
+        ))
+    if _directional_accuracy_already_mentioned(history) and not ACCURACY_STATS_RE.search(latest_user_message or ""):
+        lc_messages.append(SystemMessage(
+            content=(
+                "Directional accuracy has already been mentioned in this conversation. "
+                "Do not repeat directional accuracy again unless the user explicitly asks for model metrics/statistics."
+            )
+        ))
+
     try:
         tool_map = {t.name: t for t in LINKY_TOOLS}
         tool_calls_made = 0
+        must_ground_followup = _needs_followup_ticker_resolution(latest_user_message)
+        forced_grounding_retry = False
 
         for _ in range(MAX_TOOL_CALLS + 1):
             response = llm_with_tools.invoke(lc_messages)
+
+            if (
+                must_ground_followup
+                and not response.tool_calls
+                and tool_calls_made == 0
+                and not forced_grounding_retry
+            ):
+                forced_grounding_retry = True
+                lc_messages.append(response)
+                lc_messages.append(SystemMessage(
+                    content=(
+                        "You must call ticker_bets for the referenced ticker set before answering. "
+                        "Do not provide any predicted numbers without tool output."
+                    )
+                ))
+                continue
 
             if not response.tool_calls or tool_calls_made >= MAX_TOOL_CALLS:
                 break
@@ -105,7 +263,11 @@ def chat():
                 logger.info("Linky tool call: %s(%s)", tool_name, tc["args"])
                 sse_publish("chat", "tool_call", {"tool": tool_name, "args": tc["args"]})
 
-                result = tool_fn.invoke(tc["args"])
+                try:
+                    result = tool_fn.invoke(tc["args"])
+                except Exception as tool_exc:
+                    logger.exception("Linky tool failed: %s", tool_name)
+                    result = f"Tool {tool_name} failed: {tool_exc}"
                 lc_messages.append(ToolMessage(content=result, tool_call_id=tc["id"]))
                 tool_calls_made += 1
 

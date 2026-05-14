@@ -6,7 +6,7 @@ from app.extensions import db
 from app.models import (
     Company, PriceHistory, FeedSource, NewsArticle, Index,
     Signal, SignalMatch, Prediction, Report, SignalDigest,
-    TrendSnapshot, article_companies,
+    TrendSnapshot, TickerBetModelRun, article_companies,
 )
 from app.articles.processor import search_articles, get_sentiment_index
 from app.articles.indices import all_indices
@@ -47,6 +47,7 @@ def scheduler_health():
         "analysis": 45 * 60,
         "trends": 45 * 60,
         "report": 45 * 60,
+        "tickerbets": 30 * 60 * 60,
     }
 
     status = {}
@@ -67,6 +68,8 @@ def scheduler_health():
                 stale = age_seconds > threshold
             except ValueError:
                 stale = True
+        elif name == "tickerbets":
+            stale = False
         status[name] = {
             "last_success": ts.isoformat() if ts else None,
             "age_seconds": age_seconds,
@@ -405,6 +408,96 @@ def run_prediction(symbol):
     from app.tasks.analyze import run_company_prediction
     run_company_prediction.delay(company.id)
     return jsonify({"status": "queued", "symbol": company.symbol}), 202
+
+
+def _serialize_tickerbet_run(run: TickerBetModelRun) -> dict:
+    return {
+        "id": run.id,
+        "run_id": run.run_id,
+        "status": run.status,
+        "model_family": run.model_family,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "training_window_start": run.training_window_start.isoformat() if run.training_window_start else None,
+        "training_window_end": run.training_window_end.isoformat() if run.training_window_end else None,
+        "company_count": run.company_count,
+        "sample_count": run.sample_count,
+        "train_count": run.train_count,
+        "test_count": run.test_count,
+        "feature_columns": run.feature_columns or {},
+        "metrics": run.metrics or {},
+        "artifact_prefix": run.artifact_prefix,
+        "dataset_key": run.dataset_key,
+        "model_keys": run.model_keys or {},
+        "metadata_key": run.metadata_key,
+        "error": run.error,
+    }
+
+
+@bp.route("/tickerbets/train", methods=["POST"])
+def train_tickerbets_route():
+    from app.tasks.tickerbets import train_tickerbets
+
+    task = train_tickerbets.apply_async(queue="backfill")
+    return jsonify({"status": "queued", "task_id": task.id}), 202
+
+
+@bp.route("/tickerbets/runs")
+def tickerbet_runs():
+    limit = request.args.get("limit", 20, type=int)
+    runs = (
+        TickerBetModelRun.query.order_by(TickerBetModelRun.started_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return jsonify([_serialize_tickerbet_run(r) for r in runs])
+
+
+@bp.route("/tickerbets/runs/latest")
+def tickerbet_latest_run():
+    run = (
+        TickerBetModelRun.query.filter_by(status="succeeded")
+        .order_by(TickerBetModelRun.completed_at.desc())
+        .first()
+    )
+    if not run:
+        return jsonify({"error": "No successful tickerbet model run yet"}), 404
+    return jsonify(_serialize_tickerbet_run(run))
+
+
+@bp.route("/tickerbets/target-dates")
+def tickerbet_target_dates():
+    min_days = request.args.get("min_days_ahead", 1, type=int)
+    max_days = request.args.get("max_days_ahead", 10, type=int)
+    from app.tickerbets.service import available_target_dates
+
+    dates = available_target_dates(min_days_ahead=min_days, max_days_ahead=max_days)
+    return jsonify({
+        "dates": [d.isoformat() for d in dates],
+        "min_days_ahead": min_days,
+        "max_days_ahead": max_days,
+    })
+
+
+@bp.route("/tickerbets/generate", methods=["POST"])
+def tickerbet_generate():
+    payload = request.get_json(silent=True) or {}
+    symbol = (payload.get("symbol") or "").upper()
+    target_date = payload.get("target_date")
+    run_id = payload.get("run_id")
+
+    if not symbol:
+        return jsonify({"error": "Missing symbol"}), 400
+    if not target_date:
+        return jsonify({"error": "Missing target_date"}), 400
+
+    from app.tickerbets.service import generate_bet_prediction
+
+    try:
+        result = generate_bet_prediction(symbol=symbol, target_date=target_date, run_id=run_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result)
 
 
 @bp.route("/articles/search/text")

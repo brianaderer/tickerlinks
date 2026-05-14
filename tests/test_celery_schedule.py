@@ -13,3 +13,9 @@ def test_celery_beat_schedule_has_trends_and_15m_report():
         assert "generate-report" in beat_schedule
         assert beat_schedule["generate-report"]["task"] == "app.tasks.report.generate_report"
         assert float(beat_schedule["generate-report"]["schedule"]) == 900.0
+
+        assert "train-tickerbets-midnight" in beat_schedule
+        assert beat_schedule["train-tickerbets-midnight"]["task"] == "app.tasks.tickerbets.train_tickerbets"
+        tickerbets_schedule = beat_schedule["train-tickerbets-midnight"]["schedule"]
+        assert tickerbets_schedule._orig_minute == 0
+        assert tickerbets_schedule._orig_hour == 0

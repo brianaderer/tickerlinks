@@ -1,6 +1,7 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from celery import Celery
+from celery.schedules import crontab
 
 db = SQLAlchemy()
 migrate = Migrate()
@@ -14,13 +15,14 @@ def celery_init_app(app):
     celery.conf.include = [
         "app.tasks.fetch", "app.tasks.analyze", "app.tasks.backtest",
         "app.tasks.articles", "app.tasks.report", "app.tasks.trends",
-        "app.tasks.maintenance",
+        "app.tasks.maintenance", "app.tasks.tickerbets",
     ]
     celery.conf.task_default_queue = "celery"
     celery.conf.task_routes = {
         "app.tasks.maintenance.*": {"queue": "backfill"},
         "app.tasks.chat.*": {"queue": "user"},
         "app.tasks.analyze.run_company_prediction": {"queue": "user"},
+        "app.tasks.tickerbets.train_tickerbets": {"queue": "backfill"},
     }
     celery.conf.beat_schedule = {
         "fetch-market-data": {
@@ -54,6 +56,10 @@ def celery_init_app(app):
         "check-backtest-windows": {
             "task": "app.tasks.backtest.check_backtest_windows",
             "schedule": 1800.0,  # every 30 minutes
+        },
+        "train-tickerbets-midnight": {
+            "task": "app.tasks.tickerbets.train_tickerbets",
+            "schedule": crontab(minute=0, hour=0),  # daily UTC midnight
         },
     }
     celery.conf.timezone = "UTC"
