@@ -12,7 +12,7 @@ from app.sources.base import BaseFetcher
 logger = logging.getLogger(__name__)
 
 EDGAR_HEADERS = {
-    "User-Agent": "StockLynx Research research@stocklynx.dev",
+    "User-Agent": "TickerLinks Research research@tickerlinks.dev",
     "Accept": "application/json",
 }
 EDGAR_COMPANY_TICKERS = "https://www.sec.gov/files/company_tickers.json"

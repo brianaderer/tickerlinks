@@ -183,3 +183,9 @@ export interface TickerbetPrediction {
   run_id: string;
   metrics: Record<string, number>;
 }
+
+export interface TickerbetTargetDates {
+  dates: string[];
+  min_days_ahead: number;
+  max_days_ahead: number;
+}

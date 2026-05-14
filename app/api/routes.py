@@ -465,6 +465,20 @@ def tickerbet_latest_run():
     return jsonify(_serialize_tickerbet_run(run))
 
 
+@bp.route("/tickerbets/target-dates")
+def tickerbet_target_dates():
+    min_days = request.args.get("min_days_ahead", 1, type=int)
+    max_days = request.args.get("max_days_ahead", 10, type=int)
+    from app.tickerbets.service import available_target_dates
+
+    dates = available_target_dates(min_days_ahead=min_days, max_days_ahead=max_days)
+    return jsonify({
+        "dates": [d.isoformat() for d in dates],
+        "min_days_ahead": min_days,
+        "max_days_ahead": max_days,
+    })
+
+
 @bp.route("/tickerbets/generate", methods=["POST"])
 def tickerbet_generate():
     payload = request.get_json(silent=True) or {}

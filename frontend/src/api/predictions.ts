@@ -31,6 +31,7 @@ export function useRunPrediction(symbol: string) {
     },
     onSuccess: () => {
       addPending(symbol, Date.now());
+      qc.invalidateQueries({ queryKey: ["predictions", symbol, undefined] });
       setTimeout(() => {
         if (useAppStore.getState().pendingPredictions.has(symbol)) {
           removePending(symbol);

@@ -18,6 +18,9 @@ from app.tickerbets.features import (
 )
 from app.tickerbets.trainer import encode_inference_row, train_horizon_models
 
+MIN_HORIZON_DAYS = min(HORIZONS)
+MAX_HORIZON_DAYS = max(HORIZONS)
+
 
 def train_and_store_models(run_id: str | None = None, as_of: datetime | None = None) -> TickerBetModelRun:
     run_id = run_id or uuid4().hex
@@ -146,11 +149,11 @@ def generate_bet_prediction(symbol: str, target_date: str | date | datetime, run
         raise ValueError("No successful tickerbet model run available")
 
     requested_date = _parse_target_date(target_date)
-    resolved_date = _normalize_target_date(requested_date)
     as_of = normalize_as_of()
-    horizon = (resolved_date - as_of.date()).days
-    if horizon < 1 or horizon > 5:
-        raise ValueError("target_date must be between 1 and 5 days in the future")
+    horizon = _horizon_days_from_requested(requested_date, as_of.date())
+    if horizon < MIN_HORIZON_DAYS or horizon > MAX_HORIZON_DAYS:
+        raise ValueError(f"target_date must be between {MIN_HORIZON_DAYS} and {MAX_HORIZON_DAYS} days in the future")
+    resolved_date = _normalize_target_date(requested_date)
 
     model_key = (run.model_keys or {}).get(str(horizon))
     encoded_cols = (run.feature_columns or {}).get(str(horizon))
@@ -218,6 +221,103 @@ def _parse_target_date(raw: str | date | datetime) -> date:
 
 def _normalize_target_date(raw: date) -> date:
     d = raw
-    while d.weekday() >= 5:
+    while not _is_trading_day(d):
         d += timedelta(days=1)
     return d
+
+
+def _horizon_days_from_requested(requested_date: date, as_of_date: date) -> int:
+    return (requested_date - as_of_date).days
+
+
+def available_target_dates(
+    as_of: date | None = None,
+    min_days_ahead: int = MIN_HORIZON_DAYS,
+    max_days_ahead: int = MAX_HORIZON_DAYS,
+) -> list[date]:
+    as_of_date = as_of or normalize_as_of().date()
+    min_days = max(MIN_HORIZON_DAYS, int(min_days_ahead))
+    max_days = min(MAX_HORIZON_DAYS, int(max_days_ahead))
+    if max_days < min_days:
+        return []
+
+    dates = []
+    for offset in range(min_days, max_days + 1):
+        day = as_of_date + timedelta(days=offset)
+        if _is_trading_day(day):
+            dates.append(day)
+    return dates
+
+
+def _is_trading_day(d: date) -> bool:
+    return d.weekday() < 5 and not _is_market_holiday(d)
+
+
+def _is_market_holiday(d: date) -> bool:
+    return (
+        d in _nyse_holidays(d.year - 1)
+        or d in _nyse_holidays(d.year)
+        or d in _nyse_holidays(d.year + 1)
+    )
+
+
+@lru_cache(maxsize=16)
+def _nyse_holidays(year: int) -> set[date]:
+    holidays = {
+        _observed_holiday(date(year, 1, 1)),  # New Year's Day
+        _nth_weekday_of_month(year, 1, 0, 3),  # Martin Luther King Jr. Day
+        _nth_weekday_of_month(year, 2, 0, 3),  # Washington's Birthday
+        _easter_sunday(year) - timedelta(days=2),  # Good Friday
+        _last_weekday_of_month(year, 5, 0),  # Memorial Day
+        _observed_holiday(date(year, 7, 4)),  # Independence Day
+        _nth_weekday_of_month(year, 9, 0, 1),  # Labor Day
+        _nth_weekday_of_month(year, 11, 3, 4),  # Thanksgiving
+        _observed_holiday(date(year, 12, 25)),  # Christmas
+    }
+
+    if year >= 2022:
+        holidays.add(_observed_holiday(date(year, 6, 19)))  # Juneteenth
+
+    return holidays
+
+
+def _observed_holiday(d: date) -> date:
+    if d.weekday() == 5:  # Saturday
+        return d - timedelta(days=1)
+    if d.weekday() == 6:  # Sunday
+        return d + timedelta(days=1)
+    return d
+
+
+def _nth_weekday_of_month(year: int, month: int, weekday: int, nth: int) -> date:
+    first = date(year, month, 1)
+    delta = (weekday - first.weekday()) % 7
+    return first + timedelta(days=delta + (nth - 1) * 7)
+
+
+def _last_weekday_of_month(year: int, month: int, weekday: int) -> date:
+    if month == 12:
+        last = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        last = date(year, month + 1, 1) - timedelta(days=1)
+    delta = (last.weekday() - weekday) % 7
+    return last - timedelta(days=delta)
+
+
+def _easter_sunday(year: int) -> date:
+    # Anonymous Gregorian algorithm
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return date(year, month, day)

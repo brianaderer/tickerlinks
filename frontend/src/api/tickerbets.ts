@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_URL, apiFetch } from "./client";
-import type { TickerbetModelRun, TickerbetPrediction } from "../types";
+import type { TickerbetModelRun, TickerbetPrediction, TickerbetTargetDates } from "../types";
 
 export function useTickerbetRuns(limit = 20) {
   return useQuery({
@@ -52,5 +52,16 @@ export function useGenerateTickerbet() {
       }
       return res.json() as Promise<TickerbetPrediction>;
     },
+  });
+}
+
+export function useTickerbetTargetDates(minDaysAhead = 1, maxDaysAhead = 10) {
+  return useQuery({
+    queryKey: ["tickerbets", "target-dates", minDaysAhead, maxDaysAhead],
+    queryFn: () =>
+      apiFetch<TickerbetTargetDates>(
+        `/tickerbets/target-dates?min_days_ahead=${minDaysAhead}&max_days_ahead=${maxDaysAhead}`,
+      ),
+    refetchOnWindowFocus: false,
   });
 }

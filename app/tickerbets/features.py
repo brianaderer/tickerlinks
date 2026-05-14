@@ -7,7 +7,7 @@ import pandas as pd
 from app.models import Company, Fundamentals, PriceHistory, Signal, SignalMatch
 
 
-HORIZONS = (1, 2, 3, 4, 5)
+HORIZONS = tuple(range(1, 11))
 TRAIN_WINDOW_DAYS = 30
 PRICE_HISTORY_DAYS = 400
 SIGNAL_LOOKBACK_DAYS = 120

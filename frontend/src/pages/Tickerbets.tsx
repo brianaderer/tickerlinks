@@ -1,15 +1,19 @@
 import { useMemo, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useCompanies } from "../api/companies";
-import { useGenerateTickerbet, useLatestTickerbetRun, useTickerbetRuns, useTrainTickerbets } from "../api/tickerbets";
+import { useGenerateTickerbet, useLatestTickerbetRun, useTickerbetRuns, useTickerbetTargetDates } from "../api/tickerbets";
 import { HiOutlineChevronDown } from "react-icons/hi2";
 import type { Company } from "../types";
 
-function formatDateInput(d: Date) {
-  return d.toISOString().slice(0, 10);
-}
-
 function formatIsoDate(raw: string) {
   return (raw || "").split("T")[0];
+}
+
+function formatTargetDateOption(raw: string) {
+  const [y, m, d] = raw.split("-").map(Number);
+  const utcDate = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
+  const weekday = utcDate.toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
+  return `${raw} (${weekday})`;
 }
 
 type RankedCompany = {
@@ -89,19 +93,16 @@ function rankCompanies(query: string, companies: Company[]): RankedCompany[] {
 
 export default function Tickerbets() {
   const { data: companies } = useCompanies();
+  const { data: targetDateOptions } = useTickerbetTargetDates(1, 10);
   const { data: latestRun } = useLatestTickerbetRun();
   const { data: recentRuns } = useTickerbetRuns(10);
-  const trainMutation = useTrainTickerbets();
   const generateMutation = useGenerateTickerbet();
   const symbolInputRef = useRef<HTMLInputElement>(null);
 
-  const [today] = useState(() => new Date());
-  const minDate = formatDateInput(new Date(today.getTime() + 24 * 60 * 60 * 1000));
-  const maxDate = formatDateInput(new Date(today.getTime() + 5 * 24 * 60 * 60 * 1000));
-
   const [symbolInput, setSymbolInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [targetDate, setTargetDate] = useState(minDate);
+  const [targetDate, setTargetDate] = useState("");
+  const targetDates = targetDateOptions?.dates || [];
   const rankedCompanies = useMemo(
     () => (companies ? rankCompanies(symbolInput, companies).slice(0, 10) : []),
     [companies, symbolInput],
@@ -115,20 +116,14 @@ export default function Tickerbets() {
   const effectiveSymbol = resolvedCompany?.symbol || "";
   const isKnownSymbol = Boolean(resolvedCompany);
   const hasTypedInput = symbolInput.trim().length > 0;
+  const effectiveTargetDate = targetDates.includes(targetDate) ? targetDate : (targetDates[0] || "");
 
   const horizonMetrics = latestRun?.metrics ? Object.entries(latestRun.metrics).sort((a, b) => Number(a[0]) - Number(b[0])) : [];
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between border-b-2 border-stone-900 pb-2">
+      <div className="border-b-2 border-stone-900 pb-2">
         <h2 className="font-serif text-2xl font-bold text-stone-900">Tickerbets</h2>
-        <button
-          onClick={() => trainMutation.mutate()}
-          disabled={trainMutation.isPending}
-          className="px-3 py-1.5 text-sm rounded border border-stone-300 bg-stone-50 hover:bg-stone-100 disabled:opacity-50"
-        >
-          {trainMutation.isPending ? "Queuing..." : "Train Now"}
-        </button>
       </div>
 
       <div className="border border-stone-300 bg-stone-100 rounded px-3 py-2 text-xs text-stone-700 font-sans leading-relaxed">
@@ -195,20 +190,27 @@ export default function Tickerbets() {
 
               <label className="text-xs text-stone-500 font-sans space-y-1">
                 <span>Target date</span>
-                <input
-                  type="date"
-                  value={targetDate}
-                  min={minDate}
-                  max={maxDate}
+                <select
+                  value={effectiveTargetDate}
                   onChange={(e) => setTargetDate(e.target.value)}
                   className="w-full border border-stone-300 rounded px-2 py-1.5 text-sm"
-                />
+                >
+                  {targetDates.length === 0 ? (
+                    <option value="">No trading dates available</option>
+                  ) : (
+                    targetDates.map((d) => (
+                      <option key={d} value={d}>
+                        {formatTargetDateOption(d)}
+                      </option>
+                    ))
+                  )}
+                </select>
               </label>
 
               <div className="flex items-end">
                 <button
-                  onClick={() => generateMutation.mutate({ symbol: effectiveSymbol, target_date: targetDate })}
-                  disabled={!effectiveSymbol || !targetDate || generateMutation.isPending || !isKnownSymbol}
+                  onClick={() => generateMutation.mutate({ symbol: effectiveSymbol, target_date: effectiveTargetDate })}
+                  disabled={!effectiveSymbol || !effectiveTargetDate || generateMutation.isPending || !isKnownSymbol}
                   className="w-full px-3 py-1.5 text-sm rounded bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-50"
                 >
                   {generateMutation.isPending ? "Generating..." : "Generate Bet"}
@@ -224,7 +226,14 @@ export default function Tickerbets() {
             <section className="border border-stone-200 rounded p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="font-serif text-base font-bold text-stone-900">
-                  {generateMutation.data.symbol} — {generateMutation.data.horizon_days}D Bet
+                  <Link
+                    to="/companies/$symbol"
+                    params={{ symbol: generateMutation.data.symbol }}
+                    className="underline underline-offset-2 hover:text-stone-700"
+                  >
+                    {generateMutation.data.symbol}
+                  </Link>{" "}
+                  — {generateMutation.data.horizon_days}D Bet
                 </h3>
                 <span className="text-xs text-stone-400">Run {generateMutation.data.run_id.slice(0, 8)}</span>
               </div>
@@ -275,15 +284,27 @@ export default function Tickerbets() {
             <h3 className="font-serif text-base font-bold text-stone-900 mb-1">Horizon Metrics</h3>
             <div className="h-px bg-stone-900 mb-3" />
             {horizonMetrics.length > 0 ? (
-              <div className="space-y-2">
-                {horizonMetrics.map(([h, m]) => (
-                  <div key={h} className="border border-stone-200 rounded p-2 text-xs">
-                    <p className="font-semibold text-sm">{h}D</p>
-                    <p>MAE: {Number(m.mae || 0).toFixed(4)}</p>
-                    <p>RMSE: {Number(m.rmse || 0).toFixed(4)}</p>
-                    <p>R²: {Number(m.r2 || 0).toFixed(4)}</p>
-                  </div>
-                ))}
+              <div className="border border-stone-200 rounded px-2 py-1.5">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-stone-500 border-b border-stone-200">
+                      <th className="text-left py-1 font-medium">H</th>
+                      <th className="text-right py-1 font-medium">MAE</th>
+                      <th className="text-right py-1 font-medium">RMSE</th>
+                      <th className="text-right py-1 font-medium">R²</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {horizonMetrics.map(([h, m]) => (
+                      <tr key={h} className="border-b border-stone-100 last:border-0">
+                        <td className="py-1 font-semibold">{h}D</td>
+                        <td className="py-1 text-right">{Number(m.mae || 0).toFixed(3)}</td>
+                        <td className="py-1 text-right">{Number(m.rmse || 0).toFixed(3)}</td>
+                        <td className="py-1 text-right">{Number(m.r2 || 0).toFixed(3)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
               <p className="text-sm text-stone-400 italic">No metrics available yet.</p>

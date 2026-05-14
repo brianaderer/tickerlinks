@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useParams, Link } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCompany, useCompanyPrices } from "../api/companies";
 import { useSignalMatches } from "../api/signals";
 import { usePredictions, useRunPrediction } from "../api/predictions";
@@ -12,6 +13,7 @@ import { decodeHtml } from "../utils";
 
 export default function CompanyDetail() {
   const { symbol } = useParams({ strict: false });
+  const queryClient = useQueryClient();
   const company = useCompany(symbol!);
   const { data: prices, isLoading: pricesLoading } = useCompanyPrices(symbol!, 5000);
   const { data: matches, isLoading: matchesLoading } = useSignalMatches(symbol);
@@ -41,6 +43,14 @@ export default function CompanyDetail() {
       removePendingPrediction(symbol);
     }
   }, [symbol, isPending, pendingStartedAt, predictions, removePendingPrediction]);
+
+  useEffect(() => {
+    if (!symbol || !isPending) return;
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ["predictions", symbol, undefined] });
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [symbol, isPending, queryClient]);
 
   const companyHeader = (
     <div className="border-b-2 border-stone-900 pb-3">
